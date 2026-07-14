@@ -1,0 +1,28 @@
+YibinThesis is an unofficial, independently implemented template.
+
+The source code in this repository was written for this project. No source code,
+class file, bibliography style, logo, cover artwork, or school-specific command
+set was copied from the universities listed below. Their public repositories
+were reviewed only for high-level engineering patterns such as key-value
+metadata, separation of front/main/back matter, modular chapters, build
+automation, and documentation layout:
+
+- UESTCthesis: https://github.com/shifujun/UESTCthesis
+- GZHU Report LaTeX Version:
+  https://github.com/swq123459/GZHU-Report-Latex-Version
+- tongjithesis: https://github.com/SXKDZ/tongjithesis
+- scuthesis: https://github.com/fatestigma/scuthesis
+- NEU bachelor thesis template:
+  https://github.com/Acytoo/neu_bachelor_thesis_template
+- bjtuThesis: https://github.com/chenzewei01/bjtuThesis
+- ZJU CS/SE undergraduate design template:
+  https://github.com/zhanghai/zju-csse-undergraduate-design-latex-template
+- BIThesis: https://github.com/BITNP/BIThesis
+
+Institutional names, logos, seals, wordmarks, and other identifying assets are
+not covered by the MIT License in this repository. Their use remains subject to
+the rights and rules of the relevant institution.
+
+The layout rules were derived from user-supplied Yibin University thesis
+requirements and a local 2024 Word template. Those source documents are not
+redistributed in this repository.

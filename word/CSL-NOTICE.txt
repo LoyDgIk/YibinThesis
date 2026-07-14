@@ -1,0 +1,16 @@
+The bundled citation style is:
+
+  China National Standard GB/T 7714-2015 (numeric, 中文)
+  http://www.zotero.org/styles/china-national-standard-gb-t-7714-2015-numeric
+
+Author: 牛耕田 <buffalo_d@163.com>
+Contributor: Zeping Lee <zepinglee@gmail.com>
+Upstream style metadata date: 2024-01-22
+
+The CSL file is licensed under the Creative Commons
+Attribution-ShareAlike 3.0 License (CC BY-SA 3.0):
+https://creativecommons.org/licenses/by-sa/3.0/
+
+The author, contributor, upstream identifier, and license are also retained
+inside the CSL <info> element. YibinThesis does not claim authorship of the
+citation style.

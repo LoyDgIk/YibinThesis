@@ -1,0 +1,16 @@
+* text=auto
+
+*.tex  text eol=lf
+*.cls  text eol=lf
+*.bib  text eol=lf
+*.md   text eol=lf
+*.py   text eol=lf
+*.lua  text eol=lf
+*.json text eol=lf
+*.txt  text eol=lf
+*.csl  text eol=lf
+Makefile text eol=lf
+
+*.ps1  text eol=crlf
+*.png  binary
+*.docx binary

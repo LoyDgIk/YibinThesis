@@ -1,0 +1,109 @@
+% !TeX program = xelatex
+\documentclass[humanities,nobibliography]{yibinthesis}
+
+\yibinsetup{
+  title          = {模板编译测试},
+  english-title  = {Template Compilation Test},
+  author         = {测试作者},
+  student-id     = {0000000000},
+  college        = {测试学院},
+  major          = {测试专业},
+  grade          = {20XX},
+  advisor        = {测试导师},
+  advisor-title  = {教师},
+  date           = {20XX 年 X 月 X 日},
+  secrecy        = public
+}
+\addbibresource{ignored-in-nobibliography-mode.bib}
+
+\makeatletter
+\newcommand{\yibinassertheadingindent}[1]{%
+  \if@afterindent\else
+    \PackageError{yibinthesis-smoke}{#1 suppresses the following paragraph indent}{}
+  \fi
+  \ifdim\parindent=2em\relax\else
+    \PackageError{yibinthesis-smoke}{#1 changed parindent from two em}{}
+  \fi
+}
+\makeatother
+
+\begin{document}
+\makeyibincover
+\makeyibindeclarations
+
+\frontmatter
+\begin{cnabstract}
+本文件仅用于检查类文件能否完成封面、声明、摘要、目录、标题、图表和公式排版，
+不包含研究结论。
+\cnkeywords{模板；编译；测试}
+\end{cnabstract}
+
+\begin{enabstract}
+This file is a compilation fixture. It contains no research result.
+\enkeywords{template; compilation; test}
+\end{enabstract}
+
+\clearpage
+\tableofcontents
+
+\mainmatter
+\yibinopeningchapter
+\yibinassertheadingindent{Humanities opening chapter}
+这是无编号章与正文段落的编译测试。
+
+\chapter{标题测试}\label{chap:humanities-first}
+\yibinassertheadingindent{Humanities chapter}
+本段检查一级标题后的首段仍然保留两个汉字的首行缩进。
+
+\section{二级标题}
+\yibinassertheadingindent{Humanities section}
+本段检查二级标题后的首段仍然保留两个汉字的首行缩进。
+
+\subsection{三级标题}
+\yibinassertheadingindent{Humanities subsection}
+本段检查三级标题后的首段仍然保留两个汉字的首行缩进。
+
+\subsubsection{四级标题}
+\yibinassertheadingindent{Humanities subsubsection}
+本段检查四级标题后的首段仍然保留两个汉字的首行缩进。
+
+\begin{table}[htbp]
+  \centering
+  \caption{三线表测试}
+  \label{tab:humanities}
+  \begin{tabular}{ll}
+    \toprule
+    项目 & 内容 \\
+    \midrule
+    一 & 测试 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \fbox{\rule{0pt}{2cm}\rule{5cm}{0pt}}
+  \caption{插图测试}
+  \label{fig:humanities}
+\end{figure}
+
+\begin{equation}
+  y=f(x).
+  \label{eq:humanities}
+\end{equation}
+
+交叉引用测试：第\ref{chap:humanities-first}个一级标题、表\ref{tab:humanities}、
+图\ref{fig:humanities}和式\eqref{eq:humanities}。
+
+\chapter{第二个一级标题}
+\yibinassertheadingindent{Second humanities chapter}
+本段用于检查人文社科一级标题不强制另起一页，并验证目录中的“、”标点。
+
+文末注释标记\yibinnote{注释测试。}
+
+\backmatter
+\printyibinnotes
+\yibinclosingchapter
+\yibinassertheadingindent{Humanities closing chapter}
+这是后置无编号章的编译测试。
+\end{document}

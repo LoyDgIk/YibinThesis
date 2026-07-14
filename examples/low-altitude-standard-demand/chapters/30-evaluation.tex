@@ -1,0 +1,30 @@
+\chapter{候选需求评价规则}
+
+候选主题进入评价表前，必须能够映射到具体标准化对象，并保留来源句段和标准供给检索记录。
+本测试案例采用五类 $0$--$3$ 级指标演示三线表和公式排版，指标含义见表\ref{tab:indicators}。
+
+\begin{table}[htbp]
+  \centering
+  \caption{候选标准需求评价指标}
+  \label{tab:indicators}
+  \begin{tabularx}{\textwidth}{cX X}
+    \toprule
+    符号 & 指标 & 证据边界 \\
+    \midrule
+    $H$ & 文本热度 & 词频、TF--IDF 和独立来源数量 \\
+    $C$ & 政策一致性 & 指南、法规、政策或标准计划 \\
+    $N$ & 标准化必要性 & 协调统一、互操作、质量或安全约束 \\
+    $S$ & 标准供给状态 & 现行标准、在研计划和未检出记录 \\
+    $R$ & 风险与可靠性 & 安全、通信导航、数据链路和监管追溯 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+候选优先级指数仅作为案例中的排序示意：
+
+\begin{equation}
+  P=\frac{H+C+N+S+R}{5}.
+  \label{eq:priority}
+\end{equation}
+
+式\eqref{eq:priority}不代表正式标准立项优先级，也不构成本案例的实证结果\yibinnote{该说明用于测试文末集中注释。}。

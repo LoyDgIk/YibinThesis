@@ -1,0 +1,85 @@
+% !TeX program = xelatex
+\documentclass[science,nobibliography]{yibinthesis}
+
+\yibinsetup{
+  title   = {理工农医编号测试},
+  author  = {测试作者},
+  college = {测试学院},
+  major   = {测试专业}
+}
+\addbibresource{ignored-in-nobibliography-mode.bib}
+
+\makeatletter
+\newcommand{\yibinassertheadingindent}[1]{%
+  \if@afterindent\else
+    \PackageError{yibinthesis-smoke}{#1 suppresses the following paragraph indent}{}
+  \fi
+  \ifdim\parindent=2em\relax\else
+    \PackageError{yibinthesis-smoke}{#1 changed parindent from two em}{}
+  \fi
+}
+\makeatother
+
+\begin{document}
+\mainmatter
+\yibinopeningchapter
+\yibinassertheadingindent{Science opening chapter}
+\section{绪论中的编号小节}\label{sec:science-intro}
+\yibinassertheadingindent{Science opening section}
+本段用于防止未编号绪论产生 0.1。
+
+\chapter{一级标题}\label{chap:science-first}
+\yibinassertheadingindent{Science chapter}
+本段检查理工农医一级标题后的首段仍然保留两个汉字的首行缩进。
+
+\section{二级标题}
+\yibinassertheadingindent{Science section}
+本段检查理工农医二级标题后的首段仍然保留两个汉字的首行缩进。
+
+\subsection{三级标题}
+\yibinassertheadingindent{Science subsection}
+本段检查理工农医三级标题后的首段仍然保留两个汉字的首行缩进。
+
+\subsubsection{四级标题}
+\yibinassertheadingindent{Science subsubsection}
+本段检查理工农医四级标题后的首段仍然保留两个汉字的首行缩进。
+
+\begin{table}[htbp]
+  \centering
+  \caption{表格编号测试}
+  \label{tab:science-first}
+  \begin{tabular}{ll}
+    \toprule
+    项目 & 内容 \\
+    \midrule
+    一 & 测试 \\
+    \bottomrule
+  \end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \fbox{\rule{0pt}{2cm}\rule{5cm}{0pt}}
+  \caption{插图编号测试}
+  \label{fig:science-first}
+\end{figure}
+
+\begin{equation}
+  y=f(x).
+  \label{eq:science-first}
+\end{equation}
+
+\chapter{跨章编号测试}
+\yibinassertheadingindent{Second science chapter}
+\begin{equation}
+  z=g(x).
+  \label{eq:science-second}
+\end{equation}
+
+引用测试：第\ref{sec:science-intro}节、表\ref{tab:science-first}、
+图\ref{fig:science-first}、式\eqref{eq:science-first}和式\eqref{eq:science-second}。
+
+\yibinclosingchapter
+\yibinassertheadingindent{Science closing chapter}
+这是结论章编号测试。
+\end{document}

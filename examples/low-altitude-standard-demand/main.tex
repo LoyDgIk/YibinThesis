@@ -1,0 +1,33 @@
+% !TeX program = xelatex
+% 回归案例：使用真实课题框架测试 science 编号、图表、公式、引用与双输出。
+% 请从仓库根目录执行构建命令。
+\documentclass[science]{yibinthesis}
+
+\input{examples/low-altitude-standard-demand/metadata}
+\addbibresource{examples/low-altitude-standard-demand/references.bib}
+\graphicspath{{examples/low-altitude-standard-demand/assets/}}
+
+\begin{document}
+
+\makeyibincover
+\makeyibindeclarations
+
+\frontmatter
+\input{examples/low-altitude-standard-demand/chapters/00-abstract-cn}
+\input{examples/low-altitude-standard-demand/chapters/01-abstract-en}
+\clearpage
+\tableofcontents
+
+\mainmatter
+\input{examples/low-altitude-standard-demand/chapters/10-introduction}
+\input{examples/low-altitude-standard-demand/chapters/20-method}
+\input{examples/low-altitude-standard-demand/chapters/30-evaluation}
+\input{examples/low-altitude-standard-demand/chapters/40-conclusion}
+
+\backmatter
+\printyibinnotes
+\printyibinbibliography
+\input{examples/low-altitude-standard-demand/chapters/99-appendix}
+\input{examples/low-altitude-standard-demand/chapters/90-acknowledgements}
+
+\end{document}

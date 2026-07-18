@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "YibinThesis project build configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "main"],
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "main": { "type": "string", "minLength": 1 },
+    "outputRoot": { "type": "string", "minLength": 1 },
+    "checkOutputRoot": { "type": "string", "minLength": 1 },
+    "citationMode": { "enum": ["linked", "native"] },
+    "wordRefresh": { "enum": ["auto", "always", "never"] },
+    "deliverables": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "pdf": { "type": "string", "pattern": "\\.[pP][dD][fF]$" },
+        "word": { "type": "string", "pattern": "\\.[dD][oO][cC][xX]$" }
+      }
+    }
+  }
+}

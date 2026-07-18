@@ -1,0 +1,34 @@
+\chapter{转换流程与实现方法}
+
+整体流程划分为输入解析、语义归一、双格式生成和输出校验四层。
+输入层定位主文件、元数据、章节、文献和图片；语义层提取标题、段落、图表、公式与引用关系；
+生成层分别调用 LaTeX 和 DOCX 处理链；校验层检查文件存在性、页面结构、样式属性与未解析引用。
+
+\section{外部入口与路径隔离}
+
+构建器以主文件所在目录作为论文源根目录，并将模板类复制到输出目录下的隔离运行区。
+外部入口缺少元数据、章节或图片时应立即失败，不得回退读取模板仓库内的同名占位文件。
+
+\section{语义转换与完整性检查}
+
+\subsection{特征表示}
+
+设需要检查的结构项共有 $n$ 个，第 $i$ 项通过检查时 $I_i=1$，否则 $I_i=0$，则结构完整率写为
+
+\begin{equation}
+  C=\frac{1}{n}\sum_{i=1}^{n} I_i.
+  \label{eq:completeness}
+\end{equation}
+
+\subsubsection{数据不足时的回退策略}
+
+自动转换无法可靠解释未登记的复杂宏时，流程应保留 LaTeX 作为版式主输出，并将 DOCX 标记为需要人工复核，而不是静默删除内容。
+
+\begin{figure}[htbp]
+  \centering
+  \includegraphics[width=0.92\textwidth]{document-pipeline.png}
+  \caption{学术文档双格式构建与校验流程}
+  \label{fig:document-pipeline}
+\end{figure}
+
+正文交叉引用测试：转换流程如图\ref{fig:document-pipeline}所示。

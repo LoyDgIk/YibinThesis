@@ -1,0 +1,31 @@
+\chapter{输出质量评价规则}
+
+输出文件进入人工复核前，应先完成结构、样式、引用和资源四类自动检查。
+参考文献著录及其正文对应关系按顺序编码制规则检查\yibincite{gbt7714-2015}。
+本测试案例采用五类 $0$--$3$ 级指标演示三线表和公式排版，指标含义见表\ref{tab:indicators}。
+
+\begin{table}[htbp]
+  \centering
+  \caption{双格式输出质量检查指标}
+  \label{tab:indicators}
+  \begin{tabularx}{\textwidth}{cX X}
+    \toprule
+    符号 & 指标 & 证据边界 \\
+    \midrule
+    $S$ & 结构完整性 & 章节、分节、目录和后置部分是否齐全 \\
+    $F$ & 样式符合性 & 字体、字号、行距、缩进和页边距 \\
+    $X$ & 交叉引用 & 图表、公式和正文引用能否解析 \\
+    $B$ & 文献处理 & 引文顺序与参考文献条目是否对应 \\
+    $R$ & 资源可用性 & 图片、模板类和外部文件是否可定位 \\
+    \bottomrule
+  \end{tabularx}
+\end{table}
+
+综合检查值仅作为公式和交叉引用的排版示意：
+
+\begin{equation}
+  Q=\frac{S+F+X+B+R}{5}.
+  \label{eq:quality}
+\end{equation}
+
+式\eqref{eq:quality}不代表真实项目评分，也不构成本案例的实证结果\yibinnote{该说明用于测试文末集中注释。}。

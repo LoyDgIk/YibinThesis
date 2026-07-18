@@ -1,0 +1,13 @@
+{
+  "$schema": "./yibinthesis.project.schema.json",
+  "schemaVersion": 1,
+  "main": "main.tex",
+  "outputRoot": "build",
+  "checkOutputRoot": "build/checks",
+  "citationMode": "linked",
+  "wordRefresh": "auto",
+  "deliverables": {
+    "pdf": "build/deliverables/thesis.pdf",
+    "word": "build/deliverables/thesis.docx"
+  }
+}

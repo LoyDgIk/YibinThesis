@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 
 [CmdletBinding()]
 param(
@@ -7,16 +7,33 @@ param(
     [string]$Command = 'all',
 
     [Parameter()]
-    [string]$Main = 'main.tex'
+    [string]$Config,
+
+    [Parameter()]
+    [string]$Main = 'main.tex',
+
+    [Parameter()]
+    [string]$OutputRoot,
+
+    [Parameter()]
+    [ValidateSet('linked', 'native')]
+    [string]$CitationMode = 'linked',
+
+    [Parameter()]
+    [ValidateSet('auto', 'always', 'never')]
+    [string]$WordRefresh = 'auto'
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $ProjectRoot = [System.IO.Path]::GetFullPath($PSScriptRoot)
-$BuildRoot = Join-Path $ProjectRoot 'build'
-$PdfBuildRoot = Join-Path $BuildRoot 'pdf'
-$WordBuildRoot = Join-Path $BuildRoot 'word'
+$InvocationRoot = [System.IO.Path]::GetFullPath((Get-Location).Path)
+$ProjectConfig = $null
+$ProjectConfigPath = $null
+$ConfigRoot = $null
+$DeliverablePdf = $null
+$DeliverableWord = $null
 
 function Get-FullPath {
     param(
@@ -104,6 +121,122 @@ function Get-ShortHash {
     }
 }
 
+function Get-ConfigProperty {
+    param(
+        [AllowNull()]
+        [object]$Object,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Name
+    )
+
+    if ($null -eq $Object) {
+        return $null
+    }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) {
+        return $null
+    }
+    return $property.Value
+}
+
+$configWasSpecified = $PSBoundParameters.ContainsKey('Config')
+$configCandidate = if ($configWasSpecified) {
+    Get-FullPath -Path $Config -BasePath $InvocationRoot
+}
+else {
+    Join-Path $InvocationRoot 'yibinthesis.project.json'
+}
+if ($configWasSpecified -or (Test-Path -LiteralPath $configCandidate -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $configCandidate -PathType Leaf)) {
+        throw "YibinThesis project config not found: $configCandidate"
+    }
+    $ProjectConfigPath = (Resolve-Path -LiteralPath $configCandidate).Path
+    $ConfigRoot = Split-Path -Parent $ProjectConfigPath
+    try {
+        $ProjectConfig = Get-Content -LiteralPath $ProjectConfigPath -Raw -Encoding UTF8 |
+            ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "Invalid YibinThesis project config '$ProjectConfigPath': $($_.Exception.Message)"
+    }
+
+    $schemaVersion = Get-ConfigProperty -Object $ProjectConfig -Name 'schemaVersion'
+    if ($null -eq $schemaVersion -or [int]$schemaVersion -ne 1) {
+        throw "Unsupported YibinThesis project config schemaVersion: $schemaVersion"
+    }
+
+    if (-not $PSBoundParameters.ContainsKey('Main')) {
+        $configuredMain = [string](Get-ConfigProperty -Object $ProjectConfig -Name 'main')
+        if ([string]::IsNullOrWhiteSpace($configuredMain)) {
+            throw "YibinThesis project config must define a non-empty 'main' path."
+        }
+        $Main = Get-FullPath -Path $configuredMain -BasePath $ConfigRoot
+    }
+
+    if (-not $PSBoundParameters.ContainsKey('OutputRoot')) {
+        $configuredOutput = $null
+        if ($Command -eq 'check') {
+            $configuredOutput = [string](Get-ConfigProperty -Object $ProjectConfig -Name 'checkOutputRoot')
+        }
+        if ([string]::IsNullOrWhiteSpace($configuredOutput)) {
+            $configuredOutput = [string](Get-ConfigProperty -Object $ProjectConfig -Name 'outputRoot')
+        }
+        if (-not [string]::IsNullOrWhiteSpace($configuredOutput)) {
+            $OutputRoot = Get-FullPath -Path $configuredOutput -BasePath $ConfigRoot
+        }
+    }
+
+    if (-not $PSBoundParameters.ContainsKey('CitationMode')) {
+        $configuredCitationMode = [string](Get-ConfigProperty -Object $ProjectConfig -Name 'citationMode')
+        if (-not [string]::IsNullOrWhiteSpace($configuredCitationMode)) {
+            $CitationMode = $configuredCitationMode
+        }
+    }
+    if ($CitationMode -notin @('linked', 'native')) {
+        throw "Project config citationMode must be 'linked' or 'native': $CitationMode"
+    }
+
+    if (-not $PSBoundParameters.ContainsKey('WordRefresh')) {
+        $configuredWordRefresh = [string](Get-ConfigProperty -Object $ProjectConfig -Name 'wordRefresh')
+        if (-not [string]::IsNullOrWhiteSpace($configuredWordRefresh)) {
+            $WordRefresh = $configuredWordRefresh
+        }
+    }
+    if ($WordRefresh -notin @('auto', 'always', 'never')) {
+        throw "Project config wordRefresh must be 'auto', 'always', or 'never': $WordRefresh"
+    }
+
+    $deliverables = Get-ConfigProperty -Object $ProjectConfig -Name 'deliverables'
+    $configuredPdf = [string](Get-ConfigProperty -Object $deliverables -Name 'pdf')
+    $configuredWord = [string](Get-ConfigProperty -Object $deliverables -Name 'word')
+    if (-not [string]::IsNullOrWhiteSpace($configuredPdf)) {
+        $DeliverablePdf = Get-FullPath -Path $configuredPdf -BasePath $ConfigRoot
+        if (-not [System.IO.Path]::GetExtension($DeliverablePdf).Equals('.pdf', [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Configured PDF deliverable must end in .pdf: $DeliverablePdf"
+        }
+    }
+    if (-not [string]::IsNullOrWhiteSpace($configuredWord)) {
+        $DeliverableWord = Get-FullPath -Path $configuredWord -BasePath $ConfigRoot
+        if (-not [System.IO.Path]::GetExtension($DeliverableWord).Equals('.docx', [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Configured Word deliverable must end in .docx: $DeliverableWord"
+        }
+    }
+    Write-Host "Project config: $ProjectConfigPath"
+}
+
+if ([string]::IsNullOrWhiteSpace($OutputRoot)) {
+    $BuildRoot = [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot 'build'))
+}
+elseif ([System.IO.Path]::IsPathRooted($OutputRoot)) {
+    $BuildRoot = [System.IO.Path]::GetFullPath($OutputRoot)
+}
+else {
+    $BuildRoot = [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot $OutputRoot))
+}
+$PdfBuildRoot = Join-Path $BuildRoot 'pdf'
+$WordBuildRoot = Join-Path $BuildRoot 'word'
+
 function Resolve-MainFile {
     param(
         [Parameter(Mandatory = $true)]
@@ -149,6 +282,7 @@ function Get-BuildLayout {
             $wordBaseName = $safeJobName
         }
         $compilerInput = $relativeMain
+        $workingDirectory = $ProjectRoot
     }
     else {
         $parentName = ConvertTo-SafeName -Value (Split-Path -Leaf $mainDirectory)
@@ -156,7 +290,15 @@ function Get-BuildLayout {
         $externalName = ConvertTo-SafeName -Value "$parentName-$safeJobName-$hash"
         $pdfOutputDirectory = Join-Path (Join-Path $PdfBuildRoot 'external') $externalName
         $wordBaseName = $externalName
-        $compilerInput = $mainFullPath
+        $compilerInput = [System.IO.Path]::GetFileName($mainFullPath)
+        $workingDirectory = $mainDirectory
+    }
+
+    $templateSearchRoot = if ($insideProject) {
+        $ProjectRoot
+    }
+    else {
+        [System.IO.Path]::GetFullPath((Join-Path $BuildRoot '.template-runtime'))
     }
 
     $pdfOutputDirectory = [System.IO.Path]::GetFullPath($pdfOutputDirectory)
@@ -166,14 +308,101 @@ function Get-BuildLayout {
 
     return [pscustomobject]@{
         MainPath = $mainFullPath
+        MainDirectory = $mainDirectory
         CompilerInput = $compilerInput
+        WorkingDirectory = $workingDirectory
         JobName = $jobName
         PdfOutputDirectory = $pdfOutputDirectory
         PdfOutput = Join-Path $pdfOutputDirectory "$jobName.pdf"
         WordBaseName = $wordBaseName
         WordOutput = $wordOutput
         IsProjectFile = $insideProject
+        TemplateSearchRoot = $templateSearchRoot
     }
+}
+
+function Initialize-TemplateRuntime {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Layout
+    )
+
+    if ($Layout.IsProjectFile) {
+        return
+    }
+
+    Assert-SafeBuildPath -Path $Layout.TemplateSearchRoot -AllowedRoot $BuildRoot
+    New-Item -ItemType Directory -Path $Layout.TemplateSearchRoot -Force | Out-Null
+    $classSource = Join-Path $ProjectRoot 'yibinthesis.cls'
+    $classTarget = Join-Path $Layout.TemplateSearchRoot 'yibinthesis.cls'
+    if (-not (Test-Path -LiteralPath $classSource -PathType Leaf)) {
+        throw "Template class not found: $classSource"
+    }
+    Copy-Item -LiteralPath $classSource -Destination $classTarget -Force
+
+    $logoSource = Join-Path $ProjectRoot 'assets\yibin-university-logo.png'
+    $logoTarget = Join-Path $Layout.TemplateSearchRoot 'assets\yibin-university-logo.png'
+    if (-not (Test-Path -LiteralPath $logoSource -PathType Leaf)) {
+        throw "Template built-in logo not found: $logoSource"
+    }
+    New-Item -ItemType Directory -Path (Split-Path -Parent $logoTarget) -Force | Out-Null
+    Copy-Item -LiteralPath $logoSource -Destination $logoTarget -Force
+}
+
+function Copy-BibliographyResourcesToOutput {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Layout
+    )
+
+    $source = Get-Content -LiteralPath $Layout.MainPath -Raw -Encoding UTF8
+    $resourceMatches = [regex]::Matches(
+        $source,
+        '\\addbibresource(?:\s*\[[^\]]*\])?\s*\{(?<path>[^}]+)\}'
+    )
+    foreach ($match in $resourceMatches) {
+        $resource = $match.Groups['path'].Value.Trim()
+        if ([string]::IsNullOrWhiteSpace($resource) -or [System.IO.Path]::IsPathRooted($resource)) {
+            continue
+        }
+        $sourceCandidates = @([System.IO.Path]::GetFullPath((Join-Path $Layout.MainDirectory $resource)))
+        if ($Layout.IsProjectFile) {
+            $sourceCandidates += [System.IO.Path]::GetFullPath((Join-Path $ProjectRoot $resource))
+        }
+        $resourceSource = $sourceCandidates |
+            Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } |
+            Select-Object -First 1
+        if ([string]::IsNullOrWhiteSpace([string]$resourceSource)) {
+            throw "Bibliography resource not found for selected Main: $resource"
+        }
+        $resourceTarget = [System.IO.Path]::GetFullPath((Join-Path $Layout.PdfOutputDirectory $resource))
+        Assert-SafeBuildPath -Path $resourceTarget -AllowedRoot $Layout.PdfOutputDirectory
+        New-Item -ItemType Directory -Path (Split-Path -Parent $resourceTarget) -Force | Out-Null
+        Copy-Item -LiteralPath $resourceSource -Destination $resourceTarget -Force
+    }
+}
+
+function New-AsciiBiberPathAlias {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Layout
+    )
+
+    $asciiRoot = @($env:LOCALAPPDATA, $env:TEMP, $env:TMP) |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) -and $_ -notmatch '[^\x00-\x7F]' } |
+        Select-Object -First 1
+    if ([string]::IsNullOrWhiteSpace([string]$asciiRoot)) {
+        throw 'Biber 2.17 needs an ASCII temporary path, but no ASCII LOCALAPPDATA/TEMP/TMP directory was found.'
+    }
+    $aliasParent = Join-Path $asciiRoot 'YibinThesis\biber-paths'
+    New-Item -ItemType Directory -Path $aliasParent -Force | Out-Null
+    $aliasName = '{0}-{1}' -f (Get-ShortHash -Value $Layout.PdfOutputDirectory.ToLowerInvariant()), $PID
+    $aliasPath = Join-Path $aliasParent $aliasName
+    if (Test-Path -LiteralPath $aliasPath) {
+        throw "Refusing to replace an existing Biber path alias: $aliasPath"
+    }
+    New-Item -ItemType Junction -Path $aliasPath -Target $Layout.PdfOutputDirectory | Out-Null
+    return $aliasPath
 }
 
 function Get-KnownTectonicPaths {
@@ -378,6 +607,31 @@ function Assert-CompatibleBiber {
     }
 }
 
+function Prepare-PdfSignatureAssets {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Layout,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Tools
+    )
+
+    $preparer = Join-Path $ProjectRoot 'tools\prepare_signature_assets.py'
+    if (-not (Test-Path -LiteralPath $preparer -PathType Leaf)) {
+        throw "Signature asset preparer not found: $preparer"
+    }
+    Invoke-NativeTool `
+        -FilePath $Tools.Python.Path `
+        -Arguments @(
+            $preparer,
+            '--main', $Layout.MainPath,
+            '--project-root', $ProjectRoot,
+            '--output-dir', $Layout.PdfOutputDirectory
+        ) `
+        -WorkingDirectory $ProjectRoot `
+        -Description 'signature asset preparation'
+}
+
 function Invoke-TectonicBuild {
     param(
         [Parameter(Mandatory = $true)]
@@ -400,6 +654,7 @@ function Invoke-TectonicBuild {
         Write-Warning "This template is verified with Tectonic 0.16.9; detected: $tectonicVersion"
     }
 
+    Initialize-TemplateRuntime -Layout $Layout
     New-Item -ItemType Directory -Path $Layout.PdfOutputDirectory -Force | Out-Null
     if (Test-Path -LiteralPath $Layout.PdfOutput -PathType Leaf) {
         Remove-Item -LiteralPath $Layout.PdfOutput -Force
@@ -407,31 +662,55 @@ function Invoke-TectonicBuild {
 
     $commonArguments = @(
         '-X', 'compile',
-        '-Z', "search-path=$ProjectRoot",
-        '-Z', "search-path=$(Split-Path -Parent $Layout.MainPath)",
+        '-Z', "search-path=$($Layout.MainDirectory)",
+        '-Z', "search-path=$($Layout.TemplateSearchRoot)",
+        '-Z', "search-path=$($Layout.PdfOutputDirectory)",
         '--outdir', $Layout.PdfOutputDirectory,
         '--keep-intermediates',
         '--keep-logs',
         '--synctex'
     )
-    Invoke-NativeTool -FilePath $Tools.Tectonic.Path -Arguments ($commonArguments + @('--pass', 'tex', $Layout.CompilerInput)) -WorkingDirectory $ProjectRoot -Description 'tectonic pass 1'
+    Invoke-NativeTool -FilePath $Tools.Tectonic.Path -Arguments ($commonArguments + @('--pass', 'tex', $Layout.CompilerInput)) -WorkingDirectory $Layout.WorkingDirectory -Description 'tectonic pass 1'
 
     if ($needsBiber) {
         if ($Layout.JobName -match '[^\x00-\x7F]') {
             throw 'Biber 2.17 cannot reliably process a non-ASCII TeX job name. Rename the entry .tex file with an ASCII filename.'
         }
-        $relativeOutputDirectory = $Layout.PdfOutputDirectory.Substring(
-            $ProjectRoot.TrimEnd('\', '/').Length
-        ).TrimStart('\', '/')
-        if ($relativeOutputDirectory -match '[^\x00-\x7F]') {
-            throw 'Biber 2.17 cannot reliably process a non-ASCII output path. Use an ASCII relative directory for the entry point.'
+        Copy-BibliographyResourcesToOutput -Layout $Layout
+        $biberAlias = $null
+        if ($Layout.PdfOutputDirectory -match '[^\x00-\x7F]') {
+            $biberAlias = New-AsciiBiberPathAlias -Layout $Layout
+            $biberOutputDirectory = $biberAlias
+        }
+        elseif (Test-PathWithin -Candidate $Layout.PdfOutputDirectory -Parent $ProjectRoot -AllowEqual) {
+            $biberOutputDirectory = $Layout.PdfOutputDirectory.Substring(
+                $ProjectRoot.TrimEnd('\', '/').Length
+            ).TrimStart('\', '/')
+        }
+        else {
+            $biberOutputDirectory = $Layout.PdfOutputDirectory
         }
         $biberArguments = @(
-            '--input-directory', $relativeOutputDirectory,
-            '--output-directory', $relativeOutputDirectory,
+            '--input-directory', $biberOutputDirectory,
+            '--output-directory', $biberOutputDirectory,
             $Layout.JobName
         )
-        Invoke-NativeTool -FilePath $Tools.Biber.Path -Arguments $biberArguments -WorkingDirectory $ProjectRoot -Description 'biber 2.17'
+        try {
+            $biberWorkingDirectory = if ($null -ne $biberAlias) { $biberAlias } else { $Layout.WorkingDirectory }
+            Invoke-NativeTool -FilePath $Tools.Biber.Path -Arguments $biberArguments -WorkingDirectory $biberWorkingDirectory -Description 'biber 2.17'
+        }
+        finally {
+            if ($null -ne $biberAlias -and (Test-Path -LiteralPath $biberAlias)) {
+                $aliasItem = Get-Item -LiteralPath $biberAlias -Force
+                if ($aliasItem.LinkType -ne 'Junction') {
+                    throw "Refusing to remove non-junction Biber alias path: $biberAlias"
+                }
+                # Windows PowerShell 5.1 can throw a null-reference error when
+                # Remove-Item targets a directory junction. Directory.Delete
+                # removes the link itself without traversing into the build tree.
+                [System.IO.Directory]::Delete($biberAlias, $false)
+            }
+        }
 
         $bbl = Join-Path $Layout.PdfOutputDirectory "$($Layout.JobName).bbl"
         if (-not (Test-Path -LiteralPath $bbl -PathType Leaf) -or (Get-Item -LiteralPath $bbl).Length -eq 0) {
@@ -448,7 +727,7 @@ function Invoke-TectonicBuild {
             $env:PATH = $biberDirectory + [System.IO.Path]::PathSeparator + $env:PATH
         }
         $finalArguments = $commonArguments + @('--reruns', '2', $Layout.CompilerInput)
-        Invoke-NativeTool -FilePath $Tools.Tectonic.Path -Arguments $finalArguments -WorkingDirectory $ProjectRoot -Description 'tectonic final passes'
+        Invoke-NativeTool -FilePath $Tools.Tectonic.Path -Arguments $finalArguments -WorkingDirectory $Layout.WorkingDirectory -Description 'tectonic final passes'
     }
     finally {
         $env:PATH = $oldPath
@@ -464,13 +743,30 @@ function Invoke-LatexmkBuild {
         [pscustomobject]$Tools
     )
 
+    Initialize-TemplateRuntime -Layout $Layout
     New-Item -ItemType Directory -Path $Layout.PdfOutputDirectory -Force | Out-Null
     $oldPath = $env:PATH
+    $oldTexInputs = $env:TEXINPUTS
+    $oldBibInputs = $env:BIBINPUTS
     try {
         if (-not [string]::IsNullOrWhiteSpace([string]$Tools.Biber.Path)) {
             $biberDirectory = Split-Path -Parent $Tools.Biber.Path
             $env:PATH = $biberDirectory + [System.IO.Path]::PathSeparator + $env:PATH
         }
+        $texSearchRoots = @(
+            $Layout.MainDirectory,
+            $Layout.TemplateSearchRoot,
+            $Layout.PdfOutputDirectory
+        ) |
+            Select-Object -Unique
+        $bibSearchRoots = @($Layout.MainDirectory)
+        if ($Layout.IsProjectFile) {
+            $bibSearchRoots += $ProjectRoot
+        }
+        $texSearchPrefix = ($texSearchRoots -join [System.IO.Path]::PathSeparator) + [System.IO.Path]::PathSeparator
+        $bibSearchPrefix = (($bibSearchRoots | Select-Object -Unique) -join [System.IO.Path]::PathSeparator) + [System.IO.Path]::PathSeparator
+        $env:TEXINPUTS = $texSearchPrefix + $(if ([string]::IsNullOrWhiteSpace($oldTexInputs)) { '' } else { $oldTexInputs })
+        $env:BIBINPUTS = $bibSearchPrefix + $(if ([string]::IsNullOrWhiteSpace($oldBibInputs)) { '' } else { $oldBibInputs })
         $arguments = @(
             '-xelatex',
             '-interaction=nonstopmode',
@@ -480,10 +776,12 @@ function Invoke-LatexmkBuild {
             "-outdir=$($Layout.PdfOutputDirectory)",
             $Layout.CompilerInput
         )
-        Invoke-NativeTool -FilePath $Tools.Latexmk.Path -Arguments $arguments -WorkingDirectory $ProjectRoot -Description 'latexmk'
+        Invoke-NativeTool -FilePath $Tools.Latexmk.Path -Arguments $arguments -WorkingDirectory $Layout.WorkingDirectory -Description 'latexmk'
     }
     finally {
         $env:PATH = $oldPath
+        $env:TEXINPUTS = $oldTexInputs
+        $env:BIBINPUTS = $oldBibInputs
     }
 }
 
@@ -495,6 +793,10 @@ function Build-Pdf {
         [Parameter(Mandatory = $true)]
         [pscustomobject]$Tools
     )
+
+    Initialize-TemplateRuntime -Layout $Layout
+    New-Item -ItemType Directory -Path $Layout.PdfOutputDirectory -Force | Out-Null
+    Prepare-PdfSignatureAssets -Layout $Layout -Tools $Tools
 
     $canUseLatexmk = -not [string]::IsNullOrWhiteSpace([string]$Tools.Latexmk.Path) -and
         -not [string]::IsNullOrWhiteSpace([string]$Tools.XeLaTeX.Path)
@@ -514,13 +816,34 @@ function Build-Pdf {
     Write-Host "PDF generated: $($Layout.PdfOutput)"
 }
 
+function Get-WordCaptionSequenceNames {
+    # The thesis deliberately uses registered Chinese custom labels instead of
+    # Word's locale-dependent built-ins (for example this machine exposes the
+    # figure label as "Figure" even under a Chinese UI).  Registration is an
+    # explicit one-time user action; the build never mutates Normal.dotm.
+    return [pscustomobject]@{
+        Figure = '图'
+        Table = '表'
+        Equation = '公式'
+        Source = 'YibinThesis registered CaptionLabels'
+    }
+}
+
 function Build-Word {
     param(
         [Parameter(Mandatory = $true)]
         [pscustomobject]$Layout,
 
         [Parameter(Mandatory = $true)]
-        [pscustomobject]$Tools
+        [pscustomobject]$Tools,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('linked', 'native')]
+        [string]$CitationMode,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('auto', 'always', 'never')]
+        [string]$WordRefresh
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$Tools.Python.Path)) {
@@ -535,32 +858,106 @@ function Build-Word {
         throw "Word builder not found: $builder"
     }
     New-Item -ItemType Directory -Path $WordBuildRoot -Force | Out-Null
+    $captionSequences = Get-WordCaptionSequenceNames
+    Write-Host (
+        "[Word captions] Figure='{0}', Table='{1}', Equation='{2}' ({3})" -f
+        $captionSequences.Figure,
+        $captionSequences.Table,
+        $captionSequences.Equation,
+        $captionSequences.Source
+    )
     $arguments = @()
     $arguments += $Tools.Python.PrefixArguments
     $arguments += @(
         $builder,
         '--main', $Layout.MainPath,
         '--output', $Layout.WordOutput,
-        '--pandoc', $Tools.Pandoc.Path
+        '--pandoc', $Tools.Pandoc.Path,
+        '--citation-mode', $CitationMode,
+        '--word-figure-sequence', $captionSequences.Figure,
+        '--word-table-sequence', $captionSequences.Table,
+        '--word-equation-sequence', $captionSequences.Equation
     )
+    $tempRoot = Join-Path $BuildRoot '.tmp'
+    New-Item -ItemType Directory -Path $tempRoot -Force | Out-Null
     $oldPythonUtf8 = $env:PYTHONUTF8
+    $oldTemp = $env:TEMP
+    $oldTmp = $env:TMP
     try {
         $env:PYTHONUTF8 = '1'
+        $env:TEMP = $tempRoot
+        $env:TMP = $tempRoot
         Invoke-NativeTool -FilePath $Tools.Python.Path -Arguments $arguments -WorkingDirectory $ProjectRoot -Description 'Word build'
+        if (-not (Test-Path -LiteralPath $Layout.WordOutput -PathType Leaf)) {
+            throw "Word builder exited successfully but output was not found: $($Layout.WordOutput)"
+        }
+        Invoke-WordRefresh -Path $Layout.WordOutput -Mode $WordRefresh
     }
     finally {
         $env:PYTHONUTF8 = $oldPythonUtf8
-    }
-    if (-not (Test-Path -LiteralPath $Layout.WordOutput -PathType Leaf)) {
-        throw "Word builder exited successfully but output was not found: $($Layout.WordOutput)"
+        $env:TEMP = $oldTemp
+        $env:TMP = $oldTmp
     }
     Write-Host "Word generated: $($Layout.WordOutput)"
+}
+
+function Test-WordComAvailable {
+    try {
+        return $null -ne [type]::GetTypeFromProgID('Word.Application', $false)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Invoke-WordRefresh {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('auto', 'always', 'never')]
+        [string]$Mode
+    )
+
+    if ($Mode -eq 'never') {
+        Write-Host "Word refresh skipped (-WordRefresh never): $Path"
+        return
+    }
+
+    if (-not (Test-WordComAvailable)) {
+        $message = 'Microsoft Word COM is unavailable; fields were left for Word to update when the DOCX is opened.'
+        if ($Mode -eq 'always') {
+            throw $message
+        }
+        Write-Warning $message
+        return
+    }
+
+    $refreshScript = Join-Path $ProjectRoot 'tools\refresh_word.ps1'
+    if (-not (Test-Path -LiteralPath $refreshScript -PathType Leaf)) {
+        throw "Word refresh script not found: $refreshScript"
+    }
+
+    Write-Host "[Word refresh] Updating fields and repaginating: $Path"
+    & $refreshScript -InputPath $Path -RefreshOnly
 }
 
 function Invoke-Checks {
     param(
         [Parameter(Mandatory = $true)]
-        [pscustomobject]$Tools
+        [pscustomobject]$Layout,
+
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Tools,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('linked', 'native')]
+        [string]$CitationMode,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('auto', 'always', 'never')]
+        [string]$WordRefresh
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$Tools.Python.Path)) {
@@ -573,9 +970,40 @@ function Invoke-Checks {
         throw "Format auditor not found: $auditor"
     }
 
+    $generatedWordOutputs = New-Object System.Collections.Generic.List[string]
+    $wordLayouts = New-Object System.Collections.Generic.List[object]
+    $wordLayouts.Add($Layout)
+    foreach ($wordEntry in @('main.tex', 'examples\full-featured\main.tex')) {
+        $wordEntryPath = Join-Path $ProjectRoot $wordEntry
+        if (Test-Path -LiteralPath $wordEntryPath -PathType Leaf) {
+            $candidateLayout = Get-BuildLayout -MainPath (Resolve-MainFile -Value $wordEntry)
+            $alreadyIncluded = $wordLayouts | Where-Object {
+                $_.MainPath.Equals($candidateLayout.MainPath, [System.StringComparison]::OrdinalIgnoreCase)
+            } | Select-Object -First 1
+            if ($null -eq $alreadyIncluded) {
+                $wordLayouts.Add($candidateLayout)
+            }
+        }
+    }
+    foreach ($wordLayout in $wordLayouts) {
+        Build-Word `
+            -Layout $wordLayout `
+            -Tools $Tools `
+            -CitationMode $CitationMode `
+            -WordRefresh $WordRefresh
+        $generatedWordOutputs.Add($wordLayout.WordOutput)
+    }
+
     $auditArguments = @()
     $auditArguments += $Tools.Python.PrefixArguments
-    $auditArguments += @($auditor, '--reference', $reference)
+    $auditArguments += @(
+        $auditor,
+        '--reference', $reference,
+        '--manuscript-root', $Layout.MainDirectory
+    )
+    foreach ($generatedWordOutput in $generatedWordOutputs) {
+        $auditArguments += @('--generated', $generatedWordOutput)
+    }
 
     $oldPythonUtf8 = $env:PYTHONUTF8
     try {
@@ -591,7 +1019,7 @@ function Invoke-Checks {
         $smokeLayout = Get-BuildLayout -MainPath $smokePath
         Build-Pdf -Layout $smokeLayout -Tools $Tools
     }
-    Write-Host 'Check result: PASS (format contract + humanities/science smoke builds)'
+    Write-Host "Check result: PASS (selected Main audited: $($Layout.MainPath); template regression + humanities/science smoke builds)"
 }
 
 function Get-VersionLine {
@@ -655,10 +1083,13 @@ function Show-ToolStatus {
     return $true
 }
 
-function Test-PythonDocx {
+function Test-PythonModule {
     param(
         [Parameter(Mandatory = $true)]
-        [pscustomobject]$Python
+        [pscustomobject]$Python,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Module
     )
 
     if ([string]::IsNullOrWhiteSpace([string]$Python.Path)) {
@@ -666,7 +1097,7 @@ function Test-PythonDocx {
     }
     $arguments = @()
     $arguments += $Python.PrefixArguments
-    $arguments += @('-c', 'import docx')
+    $arguments += @('-c', "import $Module")
     try {
         & $Python.Path @arguments 2>$null | Out-Null
         return ($LASTEXITCODE -eq 0)
@@ -687,6 +1118,7 @@ function Invoke-Doctor {
 
     Write-Host "YibinThesis dependency doctor"
     Write-Host "  Project root: $ProjectRoot"
+    Write-Host "  Output root:  $BuildRoot"
     Write-Host "  Main file:    $($Layout.MainPath)"
     Write-Host "  PDF output:   $($Layout.PdfOutput)"
     Write-Host "  Word output:  $($Layout.WordOutput)"
@@ -706,12 +1138,20 @@ function Invoke-Doctor {
     $pandocOk = Show-ToolStatus -Tool $Tools.Pandoc -Version (Get-VersionLine -Tool $Tools.Pandoc -Match '^pandoc ') -Required:$true
     $pythonOk = Show-ToolStatus -Tool $Tools.Python -Version (Get-VersionLine -Tool $Tools.Python -Match '^Python ') -Required:$true
 
-    $pythonDocxOk = Test-PythonDocx -Python $Tools.Python
+    $pythonDocxOk = Test-PythonModule -Python $Tools.Python -Module 'docx'
     if ($pythonDocxOk) {
         Write-Host '  [OK]      Python module: python-docx'
     }
     else {
         Write-Host '  [MISSING] Python module: python-docx (install requirements-word.txt)'
+    }
+
+    $pythonPillowOk = Test-PythonModule -Python $Tools.Python -Module 'PIL'
+    if ($pythonPillowOk) {
+        Write-Host '  [OK]      Python module: Pillow'
+    }
+    else {
+        Write-Host '  [MISSING] Python module: Pillow (install requirements-word.txt)'
     }
 
     $wordBuilder = Join-Path $ProjectRoot 'tools\build_word.py'
@@ -726,7 +1166,7 @@ function Invoke-Doctor {
 
     $pdfEngineOk = ($latexmkOk -and $xelatexOk) -or $tectonicOk
     $pdfReady = $pdfEngineOk -and ((-not $needsBiber) -or ($biberOk -and $biberCompatible))
-    $wordReady = $pandocOk -and $pythonOk -and $pythonDocxOk -and $wordFilesOk
+    $wordReady = $pandocOk -and $pythonOk -and $pythonDocxOk -and $pythonPillowOk -and $wordFilesOk
 
     Write-Host ''
     Write-Host ("  PDF toolchain:  {0}" -f $(if ($pdfReady) { 'READY' } else { 'NOT READY' }))
@@ -841,6 +1281,46 @@ function Clean-Build {
     }
 }
 
+function Publish-ConfiguredDeliverables {
+    param(
+        [Parameter(Mandatory = $true)]
+        [pscustomobject]$Layout,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SelectedCommand
+    )
+
+    $items = @()
+    if ($SelectedCommand -in @('pdf', 'all') -and -not [string]::IsNullOrWhiteSpace($DeliverablePdf)) {
+        $items += [pscustomobject]@{
+            Kind = 'PDF'
+            Source = $Layout.PdfOutput
+            Target = $DeliverablePdf
+        }
+    }
+    if ($SelectedCommand -in @('word', 'all') -and -not [string]::IsNullOrWhiteSpace($DeliverableWord)) {
+        $items += [pscustomobject]@{
+            Kind = 'Word'
+            Source = $Layout.WordOutput
+            Target = $DeliverableWord
+        }
+    }
+
+    foreach ($item in $items) {
+        if (-not (Test-Path -LiteralPath $item.Source -PathType Leaf)) {
+            throw "Expected $($item.Kind) output was not generated: $($item.Source)"
+        }
+        $targetDirectory = Split-Path -Parent $item.Target
+        New-Item -ItemType Directory -Path $targetDirectory -Force | Out-Null
+        $sourceFullPath = [System.IO.Path]::GetFullPath($item.Source)
+        $targetFullPath = [System.IO.Path]::GetFullPath($item.Target)
+        if (-not $sourceFullPath.Equals($targetFullPath, [System.StringComparison]::OrdinalIgnoreCase)) {
+            Copy-Item -LiteralPath $sourceFullPath -Destination $targetFullPath -Force
+        }
+        Write-Host "Published $($item.Kind): $targetFullPath"
+    }
+}
+
 try {
     $mainPath = Resolve-MainFile -Value $Main
     $layout = Get-BuildLayout -MainPath $mainPath
@@ -859,16 +1339,29 @@ try {
             Build-Pdf -Layout $layout -Tools $tools
         }
         'word' {
-            Build-Word -Layout $layout -Tools $tools
+            Build-Word `
+                -Layout $layout `
+                -Tools $tools `
+                -CitationMode $CitationMode `
+                -WordRefresh $WordRefresh
         }
         'check' {
-            Invoke-Checks -Tools $tools
+            Invoke-Checks `
+                -Layout $layout `
+                -Tools $tools `
+                -CitationMode $CitationMode `
+                -WordRefresh $WordRefresh
         }
         'all' {
             Build-Pdf -Layout $layout -Tools $tools
-            Build-Word -Layout $layout -Tools $tools
+            Build-Word `
+                -Layout $layout `
+                -Tools $tools `
+                -CitationMode $CitationMode `
+                -WordRefresh $WordRefresh
         }
     }
+    Publish-ConfiguredDeliverables -Layout $layout -SelectedCommand $Command
     exit 0
 }
 catch {

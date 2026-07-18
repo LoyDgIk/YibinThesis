@@ -1,0 +1,33 @@
+% !TeX program = xelatex
+% 通用回归案例：测试 science 编号、图表、公式、引用与双输出。
+% 请从仓库根目录执行构建命令。
+\documentclass[science]{yibinthesis}
+
+\input{examples/full-featured/metadata}
+\addbibresource{examples/full-featured/references.bib}
+\graphicspath{{examples/full-featured/assets/}}
+
+\begin{document}
+
+\makeyibincover
+\makeyibindeclarations
+
+\frontmatter
+\input{examples/full-featured/chapters/00-abstract-cn}
+\input{examples/full-featured/chapters/01-abstract-en}
+\clearpage
+\tableofcontents
+
+\mainmatter
+\input{examples/full-featured/chapters/10-introduction}
+\input{examples/full-featured/chapters/20-method}
+\input{examples/full-featured/chapters/30-evaluation}
+\input{examples/full-featured/chapters/40-conclusion}
+
+\backmatter
+\input{examples/full-featured/chapters/90-acknowledgements}
+\printyibinnotes
+\printyibinbibliography
+\input{examples/full-featured/chapters/99-appendix}
+
+\end{document}

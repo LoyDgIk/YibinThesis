@@ -18,6 +18,15 @@
     \PackageError{yibinthesis-smoke}{#1 changed parindent from two em}{}
   \fi
 }
+\newcommand{\yibinassertcounter}[3]{%
+  \begingroup
+    \edef\yibinactual{#2}%
+    \def\yibinexpected{#3}%
+    \ifx\yibinactual\yibinexpected\else
+      \PackageError{yibinthesis-smoke}{#1 expected #3 but got \yibinactual}{}
+    \fi
+  \endgroup
+}
 \makeatother
 
 \begin{document}
@@ -26,6 +35,7 @@
 \yibinassertheadingindent{Science opening chapter}
 \section{绪论中的编号小节}\label{sec:science-intro}
 \yibinassertheadingindent{Science opening section}
+\yibinassertcounter{Science opening section number}{\thesection}{1.1}
 本段用于防止未编号绪论产生 0.1。
 
 \chapter{一级标题}\label{chap:science-first}
@@ -48,6 +58,7 @@
   \centering
   \caption{表格编号测试}
   \label{tab:science-first}
+  \yibinassertcounter{Science table number}{\thetable}{2.1}
   \begin{tabular}{ll}
     \toprule
     项目 & 内容 \\
@@ -62,11 +73,13 @@
   \fbox{\rule{0pt}{2cm}\rule{5cm}{0pt}}
   \caption{插图编号测试}
   \label{fig:science-first}
+  \yibinassertcounter{Science figure number}{\thefigure}{2.1}
 \end{figure}
 
 \begin{equation}
   y=f(x).
   \label{eq:science-first}
+  \yibinassertcounter{Science first equation number}{\theequation}{2.1}
 \end{equation}
 
 \chapter{跨章编号测试}
@@ -74,6 +87,7 @@
 \begin{equation}
   z=g(x).
   \label{eq:science-second}
+  \yibinassertcounter{Science second equation number}{\theequation}{3.1}
 \end{equation}
 
 引用测试：第\ref{sec:science-intro}节、表\ref{tab:science-first}、
@@ -81,5 +95,6 @@
 
 \yibinclosingchapter
 \yibinassertheadingindent{Science closing chapter}
-这是结论章编号测试。
+\yibinassertcounter{Science closing chapter must not advance the chapter counter}{\thechapter}{3}
+这是无编号结论测试；结论应由类文件写入目录，但不得显示为第 4 章。
 \end{document}

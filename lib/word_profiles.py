@@ -8,8 +8,13 @@ import sys
 def bind_core(core):
     """Expose core helpers to profile functions without duplicating them."""
     module = sys.modules[__name__]
+    profile_functions = {
+        "_build_non_thesis",
+        "_postprocess_proposal_docx",
+        "_postprocess_review_docx",
+    }
     for name in dir(core):
-        if name not in {"bind_core", "sys"}:
+        if name not in {"bind_core", "sys"} and name not in profile_functions:
             setattr(module, name, getattr(core, name))
     return module
 
@@ -877,5 +882,4 @@ def _build_non_thesis(
     for warning in dict.fromkeys(warnings):
         print(f"WARNING: {warning}", file=sys.stderr)
     return output
-
 

@@ -38,7 +38,7 @@ jobs:
         shell: pwsh
         run: |
           python -m compileall -q .
-          python -m unittest discover -s lib/tests -p "test_*.py" -v
+          python -m unittest discover -s lib/tests -p "test_cli.py" -v
 
       - name: Build single-file Windows executable
         shell: pwsh

@@ -794,13 +794,16 @@ def _build_non_thesis(
                     seed = citation_seed_markdown(citations)
                     if seed:
                         markdown_parts.append(seed)
+                    markdown_parts.append(styled_marker(SECTION_REVIEW_REFERENCES))
                     markdown_parts.append(bibliography_markdown())
                     bibliography_inserted = True
             if not bibliography_inserted:
                 seed = citation_seed_markdown(citations)
                 if seed:
                     markdown_parts.append(seed)
+                markdown_parts.append(styled_marker(SECTION_REVIEW_REFERENCES))
                 markdown_parts.append(bibliography_markdown())
+            markdown_parts.append(styled_marker(SECTION_REVIEW_TAIL))
 
         assembled = "\n\n".join(part for part in markdown_parts if part.strip()) + "\n"
         assembled = labels.resolve(assembled)
@@ -882,4 +885,3 @@ def _build_non_thesis(
     for warning in dict.fromkeys(warnings):
         print(f"WARNING: {warning}", file=sys.stderr)
     return output
-

@@ -2268,7 +2268,7 @@ def _bind_oxml_module():
     import word_oxml
     module = word_oxml.bind_core(sys.modules[__name__])
     for name in dir(module):
-        if name.startswith("_") and name not in {"_build_front_matter", "_build_cover_page", "_build_originality_page", "_build_authorization_page"}:
+        if name.startswith("_"):
             globals()[name] = getattr(module, name)
     return module
 
@@ -3063,16 +3063,13 @@ def build(args: argparse.Namespace) -> Path:
                 seed = citation_seed_markdown(citations)
                 if seed:
                     markdown_parts.append(seed)
-                markdown_parts.append(styled_marker(SECTION_REVIEW_REFERENCES))
                 markdown_parts.append(bibliography_markdown())
                 bibliography_inserted = True
         if not bibliography_inserted:
             seed = citation_seed_markdown(citations)
             if seed:
                 markdown_parts.append(seed)
-            markdown_parts.append(styled_marker(SECTION_REVIEW_REFERENCES))
             markdown_parts.append(bibliography_markdown())
-        markdown_parts.append(styled_marker(SECTION_REVIEW_TAIL))
 
         assembled = "\n\n".join(part for part in markdown_parts if part.strip()) + "\n"
         assembled = labels.resolve(assembled)

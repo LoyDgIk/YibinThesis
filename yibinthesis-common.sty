@@ -1,0 +1,28 @@
+% !TeX root = main.tex
+\NeedsTeXFormat{LaTeX2e}[2020-10-01]
+\ProvidesPackage{yibinthesis-common}
+  [2026/10/03 v0.1 Shared profile cover helpers]
+
+% Shared visual primitives for proposal and literature-review profiles. The
+% document class owns metadata and fonts; profile modules only compose them.
+\makeatletter
+\newcommand{\yibinprofilelogo}[1]{%
+  \begin{textblock*}{13.15cm}(3.925cm,#1)
+    \IfFileExists{\yibinlogo}{%
+      \includegraphics[width=13.15cm,height=3.65cm]{\yibinlogo}%
+    }{%
+      \parbox[c][3.65cm][c]{13.15cm}{\centering
+        {\yibinhei\bfseries\fontsize{34bp}{42bp}\selectfont 宜宾学院\par}
+        {\yibinenglishfont\bfseries\fontsize{18bp}{22bp}\selectfont YIBIN UNIVERSITY\par}%
+      }%
+    }
+  \end{textblock*}%
+}
+
+\newcommand{\yibinprofiletitle}[1]{%
+  \begin{textblock*}{15cm}(3cm,#1)
+    \centering\yibinhei\bfseries\fontsize{28bp}{34bp}\selectfont
+  \end{textblock*}%
+}
+\makeatother
+\endinput

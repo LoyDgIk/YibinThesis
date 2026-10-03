@@ -34,6 +34,11 @@ $ProjectConfigPath = $null
 $ConfigRoot = $null
 $DeliverablePdf = $null
 $DeliverableWord = $null
+$ConfigWasSpecified = $PSBoundParameters.ContainsKey('Config')
+$MainWasSpecified = $PSBoundParameters.ContainsKey('Main')
+$OutputRootWasSpecified = $PSBoundParameters.ContainsKey('OutputRoot')
+$CitationModeWasSpecified = $PSBoundParameters.ContainsKey('CitationMode')
+$WordRefreshWasSpecified = $PSBoundParameters.ContainsKey('WordRefresh')
 
 function Get-FullPath {
     param(
@@ -140,14 +145,71 @@ function Get-ConfigProperty {
     return $property.Value
 }
 
-$configWasSpecified = $PSBoundParameters.ContainsKey('Config')
-$configCandidate = if ($configWasSpecified) {
+function Get-MetadataField {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$MetadataPath,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Field
+    )
+
+    if (-not (Test-Path -LiteralPath $MetadataPath -PathType Leaf)) {
+        throw "Metadata file required by deliverable template was not found: $MetadataPath"
+    }
+    $source = Get-Content -LiteralPath $MetadataPath -Raw -Encoding UTF8
+    $pattern = "(?m)^\s*" + [regex]::Escape($Field) + "\s*=\s*\{(?<value>.*)\}\s*,?\s*$"
+    $match = [regex]::Match($source, $pattern)
+    if (-not $match.Success) {
+        throw "Metadata field '$Field' was not found in $MetadataPath"
+    }
+    $value = $match.Groups['value'].Value.Trim()
+    $value = $value -replace '\\([_#%&{}])', '$1'
+    return $value
+}
+
+function Expand-DeliverableTemplate {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Value,
+
+        [Parameter(Mandatory = $true)]
+        [string]$MetadataPath
+    )
+
+    $matches = [regex]::Matches($Value, '\{\{(?<field>[A-Za-z][A-Za-z0-9_-]*)\}\}')
+    if ($matches.Count -eq 0) {
+        return $Value
+    }
+
+    $fields = @{}
+    foreach ($match in $matches) {
+        $field = $match.Groups['field'].Value
+        if (-not $fields.ContainsKey($field)) {
+            $fields[$field] = Get-MetadataField -MetadataPath $MetadataPath -Field $field
+        }
+    }
+
+    $expanded = $Value
+    foreach ($field in $fields.Keys) {
+        $safe = ConvertTo-SafeName -Value ([string]$fields[$field])
+        $expanded = $expanded.Replace('{{' + $field + '}}', $safe)
+    }
+    return $expanded
+}
+
+$configCandidate = if ($ConfigWasSpecified) {
     Get-FullPath -Path $Config -BasePath $InvocationRoot
 }
 else {
     Join-Path $InvocationRoot 'yibinthesis.project.json'
 }
-if ($configWasSpecified -or (Test-Path -LiteralPath $configCandidate -PathType Leaf)) {
+if (-not $ConfigWasSpecified -and
+    -not (Test-Path -LiteralPath $configCandidate -PathType Leaf) -and
+    -not $MainWasSpecified) {
+    throw "YibinThesis is a tool-only repository. Create an external project with 'yibinthesis new <directory>' or pass -Config / -Main explicitly."
+}
+if ($ConfigWasSpecified -or (Test-Path -LiteralPath $configCandidate -PathType Leaf)) {
     if (-not (Test-Path -LiteralPath $configCandidate -PathType Leaf)) {
         throw "YibinThesis project config not found: $configCandidate"
     }
@@ -166,7 +228,7 @@ if ($configWasSpecified -or (Test-Path -LiteralPath $configCandidate -PathType L
         throw "Unsupported YibinThesis project config schemaVersion: $schemaVersion"
     }
 
-    if (-not $PSBoundParameters.ContainsKey('Main')) {
+    if (-not $MainWasSpecified) {
         $configuredMain = [string](Get-ConfigProperty -Object $ProjectConfig -Name 'main')
         if ([string]::IsNullOrWhiteSpace($configuredMain)) {
             throw "YibinThesis project config must define a non-empty 'main' path."
@@ -174,7 +236,7 @@ if ($configWasSpecified -or (Test-Path -LiteralPath $configCandidate -PathType L
         $Main = Get-FullPath -Path $configuredMain -BasePath $ConfigRoot
     }
 
-    if (-not $PSBoundParameters.ContainsKey('OutputRoot')) {
+    if (-not $OutputRootWasSpecified) {
         $configuredOutput = $null
         if ($Command -eq 'check') {
             $configuredOutput = [string](Get-ConfigProperty -Object $ProjectConfig -Name 'checkOutputRoot')
@@ -187,7 +249,7 @@ if ($configWasSpecified -or (Test-Path -LiteralPath $configCandidate -PathType L
         }
     }
 
-    if (-not $PSBoundParameters.ContainsKey('CitationMode')) {
+    if (-not $CitationModeWasSpecified) {
         $configuredCitationMode = [string](Get-ConfigProperty -Object $ProjectConfig -Name 'citationMode')
         if (-not [string]::IsNullOrWhiteSpace($configuredCitationMode)) {
             $CitationMode = $configuredCitationMode
@@ -197,7 +259,7 @@ if ($configWasSpecified -or (Test-Path -LiteralPath $configCandidate -PathType L
         throw "Project config citationMode must be 'linked' or 'native': $CitationMode"
     }
 
-    if (-not $PSBoundParameters.ContainsKey('WordRefresh')) {
+    if (-not $WordRefreshWasSpecified) {
         $configuredWordRefresh = [string](Get-ConfigProperty -Object $ProjectConfig -Name 'wordRefresh')
         if (-not [string]::IsNullOrWhiteSpace($configuredWordRefresh)) {
             $WordRefresh = $configuredWordRefresh
@@ -210,14 +272,19 @@ if ($configWasSpecified -or (Test-Path -LiteralPath $configCandidate -PathType L
     $deliverables = Get-ConfigProperty -Object $ProjectConfig -Name 'deliverables'
     $configuredPdf = [string](Get-ConfigProperty -Object $deliverables -Name 'pdf')
     $configuredWord = [string](Get-ConfigProperty -Object $deliverables -Name 'word')
+    $metadataBase = if ($MainWasSpecified) { $ProjectRoot } else { $ConfigRoot }
+    $metadataMain = Get-FullPath -Path $Main -BasePath $metadataBase
+    $metadataPath = Join-Path (Split-Path -Parent $metadataMain) 'metadata.tex'
     if (-not [string]::IsNullOrWhiteSpace($configuredPdf)) {
-        $DeliverablePdf = Get-FullPath -Path $configuredPdf -BasePath $ConfigRoot
+        $expandedPdf = Expand-DeliverableTemplate -Value $configuredPdf -MetadataPath $metadataPath
+        $DeliverablePdf = Get-FullPath -Path $expandedPdf -BasePath $ConfigRoot
         if (-not [System.IO.Path]::GetExtension($DeliverablePdf).Equals('.pdf', [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "Configured PDF deliverable must end in .pdf: $DeliverablePdf"
         }
     }
     if (-not [string]::IsNullOrWhiteSpace($configuredWord)) {
-        $DeliverableWord = Get-FullPath -Path $configuredWord -BasePath $ConfigRoot
+        $expandedWord = Expand-DeliverableTemplate -Value $configuredWord -MetadataPath $metadataPath
+        $DeliverableWord = Get-FullPath -Path $expandedWord -BasePath $ConfigRoot
         if (-not [System.IO.Path]::GetExtension($DeliverableWord).Equals('.docx', [System.StringComparison]::OrdinalIgnoreCase)) {
             throw "Configured Word deliverable must end in .docx: $DeliverableWord"
         }
@@ -240,10 +307,12 @@ $WordBuildRoot = Join-Path $BuildRoot 'word'
 function Resolve-MainFile {
     param(
         [Parameter(Mandatory = $true)]
-        [string]$Value
+        [string]$Value,
+
+        [string]$BasePath = $ProjectRoot
     )
 
-    $path = Get-FullPath -Path $Value -BasePath $ProjectRoot
+    $path = Get-FullPath -Path $Value -BasePath $BasePath
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "LaTeX entry point not found: $path"
     }
@@ -333,12 +402,19 @@ function Initialize-TemplateRuntime {
 
     Assert-SafeBuildPath -Path $Layout.TemplateSearchRoot -AllowedRoot $BuildRoot
     New-Item -ItemType Directory -Path $Layout.TemplateSearchRoot -Force | Out-Null
-    $classSource = Join-Path $ProjectRoot 'yibinthesis.cls'
-    $classTarget = Join-Path $Layout.TemplateSearchRoot 'yibinthesis.cls'
-    if (-not (Test-Path -LiteralPath $classSource -PathType Leaf)) {
-        throw "Template class not found: $classSource"
+    foreach ($templateFile in @(
+        'yibinthesis.cls',
+        'yibinthesis-common.sty',
+        'yibinthesis-proposal.sty',
+        'yibinthesis-literature-review.sty'
+    )) {
+        $templateSource = Join-Path $ProjectRoot $templateFile
+        $templateTarget = Join-Path $Layout.TemplateSearchRoot $templateFile
+        if (-not (Test-Path -LiteralPath $templateSource -PathType Leaf)) {
+            throw "Template runtime file not found: $templateSource"
+        }
+        Copy-Item -LiteralPath $templateSource -Destination $templateTarget -Force
     }
-    Copy-Item -LiteralPath $classSource -Destination $classTarget -Force
 
     $logoSource = Join-Path $ProjectRoot 'assets\yibin-university-logo.png'
     $logoTarget = Join-Path $Layout.TemplateSearchRoot 'assets\yibin-university-logo.png'
@@ -616,9 +692,35 @@ function Prepare-PdfSignatureAssets {
         [pscustomobject]$Tools
     )
 
-    $preparer = Join-Path $ProjectRoot 'tools\prepare_signature_assets.py'
+    $preparer = Join-Path $ProjectRoot 'lib\prepare_signature_assets.py'
     if (-not (Test-Path -LiteralPath $preparer -PathType Leaf)) {
         throw "Signature asset preparer not found: $preparer"
+    }
+    $pythonDocxAvailable = -not [string]::IsNullOrWhiteSpace([string]$Tools.Python.Path) -and
+        (Test-PythonModule -Python $Tools.Python -Module 'docx')
+    if (-not $pythonDocxAvailable) {
+        $metadataPath = Join-Path (Split-Path -Parent $Layout.MainPath) 'metadata.tex'
+        $metadataText = if (Test-Path -LiteralPath $metadataPath -PathType Leaf) {
+            Get-Content -LiteralPath $metadataPath -Raw -Encoding UTF8
+        }
+        else {
+            ''
+        }
+        if ($metadataText -match '(?m)signature-background\s*=\s*whiten') {
+            throw 'Python is required when signature-background=whiten; install Python and python-docx or use preserve.'
+        }
+        foreach ($name in @(
+            'yibinthesis-build-overrides.tex',
+            'yibinthesis-author-signature.png',
+            'yibinthesis-advisor-signature.png'
+        )) {
+            $stale = Join-Path $Layout.PdfOutputDirectory $name
+            if (Test-Path -LiteralPath $stale) {
+                Remove-Item -LiteralPath $stale -Force
+            }
+        }
+        Write-Host 'Signature background: preserve (Python not required)'
+        return
     }
     Invoke-NativeTool `
         -FilePath $Tools.Python.Path `
@@ -853,7 +955,7 @@ function Build-Word {
         throw 'Pandoc was not found. Set YIBINTHESIS_PANDOC or add Pandoc to PATH.'
     }
 
-    $builder = Join-Path $ProjectRoot 'tools\build_word.py'
+    $builder = Join-Path $ProjectRoot 'lib\build_word.py'
     if (-not (Test-Path -LiteralPath $builder -PathType Leaf)) {
         throw "Word builder not found: $builder"
     }
@@ -964,7 +1066,7 @@ function Invoke-Checks {
         throw 'Python was not found. Set YIBINTHESIS_PYTHON or add Python to PATH.'
     }
 
-    $auditor = Join-Path $ProjectRoot 'tests\audit_format.py'
+    $auditor = Join-Path $ProjectRoot 'lib\audit_format.py'
     $reference = Join-Path $ProjectRoot 'word\reference.docx'
     if (-not (Test-Path -LiteralPath $auditor -PathType Leaf)) {
         throw "Format auditor not found: $auditor"
@@ -1136,7 +1238,7 @@ function Invoke-Doctor {
         Write-Host "  [INCOMPATIBLE] Biber $biberVersion; Tectonic 0.16.9 requires Biber 2.17 for BCF 3.8."
     }
     $pandocOk = Show-ToolStatus -Tool $Tools.Pandoc -Version (Get-VersionLine -Tool $Tools.Pandoc -Match '^pandoc ') -Required:$true
-    $pythonOk = Show-ToolStatus -Tool $Tools.Python -Version (Get-VersionLine -Tool $Tools.Python -Match '^Python ') -Required:$true
+    $pythonOk = Show-ToolStatus -Tool $Tools.Python -Version (Get-VersionLine -Tool $Tools.Python -Match '^Python ') -Required:$false
 
     $pythonDocxOk = Test-PythonModule -Python $Tools.Python -Module 'docx'
     if ($pythonDocxOk) {
@@ -1154,14 +1256,14 @@ function Invoke-Doctor {
         Write-Host '  [MISSING] Python module: Pillow (install requirements-word.txt)'
     }
 
-    $wordBuilder = Join-Path $ProjectRoot 'tools\build_word.py'
+    $wordBuilder = Join-Path $ProjectRoot 'lib\build_word.py'
     $referenceDoc = Join-Path $ProjectRoot 'word\reference.docx'
     $wordFilesOk = (Test-Path -LiteralPath $wordBuilder -PathType Leaf) -and (Test-Path -LiteralPath $referenceDoc -PathType Leaf)
     if ($wordFilesOk) {
         Write-Host '  [OK]      Word builder and reference.docx'
     }
     else {
-        Write-Host '  [MISSING] tools/build_word.py or word/reference.docx'
+        Write-Host '  [MISSING] lib/build_word.py or word/reference.docx'
     }
 
     $pdfEngineOk = ($latexmkOk -and $xelatexOk) -or $tectonicOk
@@ -1322,7 +1424,16 @@ function Publish-ConfiguredDeliverables {
 }
 
 try {
-    $mainPath = Resolve-MainFile -Value $Main
+    $selectedMainBase = if (
+        -not [System.IO.Path]::IsPathRooted($Main) -and
+        -not [string]::IsNullOrWhiteSpace([string]$ConfigRoot)
+    ) {
+        $ConfigRoot
+    }
+    else {
+        $ProjectRoot
+    }
+    $mainPath = Resolve-MainFile -Value $Main -BasePath $selectedMainBase
     $layout = Get-BuildLayout -MainPath $mainPath
 
     if ($Command -eq 'clean') {

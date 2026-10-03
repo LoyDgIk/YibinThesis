@@ -73,6 +73,283 @@ function Get-StyleName {
     }
 }
 
+function Get-ParagraphFontSize {
+    param([Parameter(Mandatory = $true)]$Paragraph)
+
+    $size = [double]$Paragraph.Range.Font.Size
+    if ([math]::Abs($size) -gt 1000 -or $size -le 0) {
+        $size = [double]$Paragraph.Range.ParagraphStyle.Font.Size
+    }
+    return $size
+}
+
+function Get-DocxCoreProperties {
+    param([Parameter(Mandatory = $true)][string]$Path)
+
+    Add-Type -AssemblyName System.IO.Compression
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+    $archive = [System.IO.Compression.ZipFile]::OpenRead($Path)
+    try {
+        $entry = $archive.GetEntry('docProps/core.xml')
+        if ($null -eq $entry) {
+            return [pscustomobject]@{ Keywords = ''; Subject = '' }
+        }
+
+        $stream = $entry.Open()
+        try {
+            $reader = New-Object System.IO.StreamReader(
+                $stream,
+                [System.Text.Encoding]::UTF8,
+                $true
+            )
+            try {
+                $xml = New-Object System.Xml.XmlDocument
+                $xml.PreserveWhitespace = $true
+                $xml.LoadXml($reader.ReadToEnd())
+            }
+            finally {
+                $reader.Dispose()
+            }
+        }
+        finally {
+            $stream.Dispose()
+        }
+
+        $namespaces = New-Object System.Xml.XmlNamespaceManager($xml.NameTable)
+        $namespaces.AddNamespace(
+            'cp',
+            'http://schemas.openxmlformats.org/package/2006/metadata/core-properties'
+        )
+        $namespaces.AddNamespace('dc', 'http://purl.org/dc/elements/1.1/')
+        $keywords = $xml.SelectSingleNode('/cp:coreProperties/cp:keywords', $namespaces)
+        $subject = $xml.SelectSingleNode('/cp:coreProperties/dc:subject', $namespaces)
+        return [pscustomobject]@{
+            Keywords = if ($null -eq $keywords) { '' } else { [string]$keywords.InnerText }
+            Subject = if ($null -eq $subject) { '' } else { [string]$subject.InnerText }
+        }
+    }
+    finally {
+        $archive.Dispose()
+    }
+}
+
+function Resolve-YibinDocumentType {
+    param(
+        [Parameter(Mandatory = $true)]$Document,
+        [Parameter(Mandatory = $true)]$CoreProperties
+    )
+
+    $keywordMatches = [regex]::Matches(
+        [string]$CoreProperties.Keywords,
+        '(?i)(?:^|;)\s*document-type\s*=\s*([^;]+)'
+    )
+    if ($keywordMatches.Count -gt 0) {
+        $declaredTypes = @(
+            $keywordMatches |
+                ForEach-Object { $_.Groups[1].Value.Trim().ToLowerInvariant() } |
+                Select-Object -Unique
+        )
+        if ($declaredTypes.Count -ne 1) {
+            throw "DOCX CoreProperties contains conflicting document-type values: $($declaredTypes -join ', ')"
+        }
+        if ($declaredTypes[0] -notin @('thesis', 'proposal', 'literature-review')) {
+            throw "Unsupported DOCX document-type: $($declaredTypes[0])"
+        }
+        return $declaredTypes[0]
+    }
+
+    $subject = [string]$CoreProperties.Subject
+    if ($subject -match '开题报告') {
+        return 'proposal'
+    }
+    if ($subject -match '文献综述') {
+        return 'literature-review'
+    }
+
+    $signals = @{
+        thesis = 0
+        proposal = 0
+        'literature-review' = 0
+    }
+    foreach ($paragraph in @($Document.Paragraphs)) {
+        $styleName = Get-StyleName -Paragraph $paragraph
+        if ($styleName -match '^宜宾开题-') {
+            $signals.proposal++
+        }
+        elseif ($styleName -match '^宜宾综述-') {
+            $signals['literature-review']++
+        }
+        elseif ($styleName -match '^(?:CoverLogo|CoverThesisType|DeclarationTitle|DeclarationBody|宜宾论文-目录标题)$') {
+            $signals.thesis++
+        }
+    }
+
+    $detected = @(
+        $signals.GetEnumerator() |
+            Where-Object { $_.Value -gt 0 } |
+            ForEach-Object { [string]$_.Key }
+    )
+    if ($detected.Count -eq 1) {
+        return $detected[0]
+    }
+    if ($detected.Count -gt 1) {
+        throw "DOCX applied styles indicate conflicting document types: $($detected -join ', ')"
+    }
+
+    Write-Warning 'DOCX has no document-type metadata or profile-specific applied styles; treating it as a legacy thesis document.'
+    return 'thesis'
+}
+
+function Get-AppliedStyleParagraphs {
+    param(
+        [Parameter(Mandatory = $true)]$Document,
+        [Parameter(Mandatory = $true)][string]$StyleName
+    )
+
+    return @(
+        foreach ($paragraph in @($Document.Paragraphs)) {
+            if ((Get-StyleName -Paragraph $paragraph) -eq $StyleName) {
+                $paragraph
+            }
+        }
+    )
+}
+
+function Assert-PrimaryFooterPageNumbering {
+    param(
+        [Parameter(Mandatory = $true)]$Document,
+        [Parameter(Mandatory = $true)][int]$SectionIndex,
+        [Nullable[int]]$ExpectedStart = $null
+    )
+
+    $section = $null
+    $footer = $null
+    try {
+        $section = $Document.Sections.Item($SectionIndex)
+        $footer = $section.Footers.Item(1)
+        $pageFieldCount = 0
+        foreach ($field in @($footer.Range.Fields)) {
+            try {
+                if ([string]$field.Code.Text -match '(?i)^\s*PAGE(?:\s|$)') {
+                    $pageFieldCount++
+                }
+            }
+            finally {
+                if ($null -ne $field) {
+                    [void][Runtime.InteropServices.Marshal]::ReleaseComObject($field)
+                }
+            }
+        }
+
+        if ($null -eq $ExpectedStart) {
+            if ($pageFieldCount -ne 0) {
+                throw "Section $SectionIndex must not display a PAGE field."
+            }
+            return
+        }
+        if ($pageFieldCount -ne 1) {
+            throw "Section $SectionIndex PAGE field count expected 1, got $pageFieldCount"
+        }
+        if (-not [bool]$footer.PageNumbers.RestartNumberingAtSection) {
+            throw "Section $SectionIndex must restart page numbering."
+        }
+        $expectedPageNumber = [int]$ExpectedStart
+        if ([int]$footer.PageNumbers.StartingNumber -ne $expectedPageNumber) {
+            throw (
+                "Section $SectionIndex page number expected to start at " +
+                "$expectedPageNumber, got $($footer.PageNumbers.StartingNumber)"
+            )
+        }
+    }
+    finally {
+        foreach ($comObject in @($footer, $section)) {
+            if ($null -ne $comObject) {
+                try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($comObject) } catch {}
+            }
+        }
+    }
+}
+
+function Assert-ProposalProfile {
+    param([Parameter(Mandatory = $true)]$Document)
+
+    if ($Document.Sections.Count -ne 1) {
+        throw "Proposal section count expected 1, got $($Document.Sections.Count)"
+    }
+    if ($Document.Tables.Count -lt 1) {
+        throw "Proposal form table was not found."
+    }
+
+    $titles = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾开题-标题')
+    $subtitles = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾开题-副标题')
+    $labels = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾开题-栏目')
+    $bodies = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾开题-正文')
+    $signatures = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾开题-签名')
+    if ($titles.Count -ne 1) { throw "Proposal title style count expected 1, got $($titles.Count)" }
+    if ($subtitles.Count -ne 1) { throw "Proposal subtitle style count expected 1, got $($subtitles.Count)" }
+    if ($labels.Count -ne 7) { throw "Proposal field-label style count expected 7, got $($labels.Count)" }
+    if ($bodies.Count -lt 7) { throw "Proposal body style count expected at least 7, got $($bodies.Count)" }
+    if ($signatures.Count -ne 1) { throw "Proposal signature style count expected 1, got $($signatures.Count)" }
+
+    Assert-Text 'Proposal title text' `
+        (Get-ParagraphText -Paragraph $titles[0]) `
+        '宜宾学院本科毕业论文（设计）开题报告'
+    Assert-Font 'Proposal title font' $titles[0].Range.Font.NameFarEast @('楷体', 'KaiTi')
+    Assert-Near 'Proposal title size' $titles[0].Range.Font.Size 18
+    if ($titles[0].Range.Font.Bold -eq 0) { throw 'Proposal title must be bold.' }
+    if ($titles[0].Format.Alignment -ne 1) { throw 'Proposal title must be centered.' }
+
+    Assert-Text 'Proposal subtitle text' `
+        (Get-ParagraphText -Paragraph $subtitles[0]) `
+        '（学生填写）'
+    Assert-Font 'Proposal subtitle font' $subtitles[0].Range.Font.NameFarEast @('宋体', 'SimSun')
+    Assert-Near 'Proposal subtitle size' $subtitles[0].Range.Font.Size 12
+    Assert-PrimaryFooterPageNumbering -Document $Document -SectionIndex 1 -ExpectedStart 4
+}
+
+function Assert-LiteratureReviewProfile {
+    param([Parameter(Mandatory = $true)]$Document)
+
+    if ($Document.Sections.Count -ne 2) {
+        throw "Literature-review section count expected 2, got $($Document.Sections.Count)"
+    }
+    if ($Document.Tables.Count -lt 1) {
+        throw 'Literature-review information page table was not found.'
+    }
+
+    $titles = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾综述-文档标题')
+    $thesisTitles = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾综述-论文题目')
+    $labels = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾综述-信息标签')
+    $values = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾综述-信息值')
+    if ($titles.Count -ne 1) { throw "Literature-review title style count expected 1, got $($titles.Count)" }
+    if ($thesisTitles.Count -ne 1) {
+        throw "Literature-review thesis-title style count expected 1, got $($thesisTitles.Count)"
+    }
+    if ($labels.Count -lt 7) {
+        throw "Literature-review information-label style count expected at least 7, got $($labels.Count)"
+    }
+    if ($values.Count -lt 6) {
+        throw "Literature-review information-value style count expected at least 6, got $($values.Count)"
+    }
+
+    Assert-Text 'Literature-review title text' `
+        (Get-ParagraphText -Paragraph $titles[0]) `
+        '文献综述'
+    Assert-Font 'Literature-review title font' $titles[0].Range.Font.NameFarEast @('黑体', 'SimHei')
+    Assert-Near 'Literature-review title size' $titles[0].Range.Font.Size 28
+    if ($titles[0].Range.Font.Bold -eq 0) { throw 'Literature-review title must be bold.' }
+    if ($titles[0].Format.Alignment -ne 1) { throw 'Literature-review title must be centered.' }
+
+    Assert-Font `
+        'Literature-review thesis-title font' `
+        $thesisTitles[0].Range.Font.NameFarEast `
+        @('黑体', 'SimHei')
+    Assert-Near 'Literature-review thesis-title size' $thesisTitles[0].Range.Font.Size 18
+    Assert-PrimaryFooterPageNumbering -Document $Document -SectionIndex 1
+    Assert-PrimaryFooterPageNumbering -Document $Document -SectionIndex 2 -ExpectedStart 1
+}
+
 function Set-StyleFont {
     param(
         [Parameter(Mandatory = $true)]$Document,
@@ -108,7 +385,7 @@ function Set-OfficialTocOoxml {
         [System.IO.Compression.ZipArchiveMode]::Update
     )
     try {
-        $parts = @('word/styles.xml', 'word/document.xml')
+        $parts = @('word/styles.xml', 'word/document.xml', 'word/settings.xml')
         foreach ($partName in $parts) {
             $entry = $archive.GetEntry($partName)
             if ($null -eq $entry) {
@@ -279,8 +556,47 @@ function Set-OfficialTocOoxml {
                 [void](Ensure-WChild -Owner $Owner -Parent $Style -LocalName 'semiHidden')
             }
 
+            function Clear-DirectoryParagraphOverrides {
+                param(
+                    [Parameter(Mandatory = $true)][System.Xml.XmlNode]$Paragraph
+                )
+
+                $paragraphProperties = Ensure-WChild `
+                    -Owner $xml -Parent $Paragraph -LocalName 'pPr'
+                # Directory styles own all visible formatting. Strip Word's
+                # regenerated direct overrides so a style edit remains global.
+                foreach ($localName in @('spacing', 'ind', 'jc', 'tabs', 'rPr')) {
+                    $direct = $paragraphProperties.SelectSingleNode(
+                        "w:$localName",
+                        $namespaces
+                    )
+                    if ($null -ne $direct) {
+                        [void]$paragraphProperties.RemoveChild($direct)
+                    }
+                }
+                foreach ($run in @($Paragraph.SelectNodes('.//w:r', $namespaces))) {
+                    $runProperties = $run.SelectSingleNode('w:rPr', $namespaces)
+                    if ($null -eq $runProperties) {
+                        continue
+                    }
+                    foreach ($localName in @('rFonts', 'sz', 'szCs', 'b', 'bCs', 'color', 'u')) {
+                        $direct = $runProperties.SelectSingleNode(
+                            "w:$localName",
+                            $namespaces
+                        )
+                        if ($null -ne $direct) {
+                            [void]$runProperties.RemoveChild($direct)
+                        }
+                    }
+                    if ($runProperties.ChildNodes.Count -eq 0) {
+                        [void]$run.RemoveChild($runProperties)
+                    }
+                }
+            }
+
             if ($partName -eq 'word/styles.xml') {
                 $styleIds = @{}
+                $captionDirectoryStyleIds = @()
                 foreach ($style in @($xml.SelectNodes('//w:style', $namespaces))) {
                     $nameNode = $style.SelectSingleNode('w:name', $namespaces)
                     if ($null -eq $nameNode) {
@@ -303,6 +619,21 @@ function Set-OfficialTocOoxml {
                         Set-TocRunProperties -Owner $xml -Properties $runProperties
                         Set-QuickStyleVisible -Owner $xml -Style $style -Priority (38 + $level)
                     }
+                    elseif ($styleName -match '(?i)^(?:table of figures|图表目录)$') {
+                        $styleId = $style.GetAttribute('styleId', $wordNamespace)
+                        $captionDirectoryStyleIds += $styleId
+                        $paragraphProperties = Ensure-WChild `
+                            -Owner $xml -Parent $style -LocalName 'pPr'
+                        Set-TocParagraphProperties `
+                            -Owner $xml `
+                            -Properties $paragraphProperties `
+                            -Level 1 `
+                            -IncludeIndent
+                        $runProperties = Ensure-WChild `
+                            -Owner $xml -Parent $style -LocalName 'rPr'
+                        Set-TocRunProperties -Owner $xml -Properties $runProperties
+                        Set-QuickStyleVisible -Owner $xml -Style $style -Priority 42
+                    }
                     elseif ($styleName -match '(?i)^toc\s+[1-3]\d+$') {
                         Set-QuickStyleHidden -Owner $xml -Style $style
                     }
@@ -313,9 +644,13 @@ function Set-OfficialTocOoxml {
                 if ($styleIds.Count -ne 3) {
                     throw 'Word TOC 1/2/3 styles were not found in styles.xml.'
                 }
+                if ($captionDirectoryStyleIds.Count -eq 0) {
+                    throw 'Word Table of Figures style was not found in styles.xml.'
+                }
                 $script:TocStyleIds = $styleIds
+                $script:CaptionDirectoryStyleIds = $captionDirectoryStyleIds
             }
-            else {
+            elseif ($partName -eq 'word/document.xml') {
                 if ($null -eq $script:TocStyleIds -or $script:TocStyleIds.Count -ne 3) {
                     throw 'Internal TOC style map was not initialized.'
                 }
@@ -326,40 +661,37 @@ function Set-OfficialTocOoxml {
                         $namespaces
                     ))
                     foreach ($paragraph in $paragraphs) {
-                        $paragraphProperties = Ensure-WChild `
-                            -Owner $xml -Parent $paragraph -LocalName 'pPr'
-                        # The real TOC style owns all visible formatting.  Strip
-                        # Word's regenerated direct overrides so later style
-                        # edits apply to every entry at once.
-                        foreach ($localName in @('spacing', 'ind', 'jc', 'tabs', 'rPr')) {
-                            $direct = $paragraphProperties.SelectSingleNode(
-                                "w:$localName",
-                                $namespaces
-                            )
-                            if ($null -ne $direct) {
-                                [void]$paragraphProperties.RemoveChild($direct)
-                            }
-                        }
-                        foreach ($run in @($paragraph.SelectNodes('.//w:r', $namespaces))) {
-                            $runProperties = $run.SelectSingleNode('w:rPr', $namespaces)
-                            if ($null -eq $runProperties) {
-                                continue
-                            }
-                            foreach ($localName in @('rFonts', 'sz', 'szCs', 'b', 'bCs', 'color', 'u')) {
-                                $direct = $runProperties.SelectSingleNode(
-                                    "w:$localName",
-                                    $namespaces
-                                )
-                                if ($null -ne $direct) {
-                                    [void]$runProperties.RemoveChild($direct)
-                                }
-                            }
-                            if ($runProperties.ChildNodes.Count -eq 0) {
-                                [void]$run.RemoveChild($runProperties)
-                            }
-                        }
+                        Clear-DirectoryParagraphOverrides -Paragraph $paragraph
                     }
                 }
+                if (
+                    $null -eq $script:CaptionDirectoryStyleIds -or
+                    $script:CaptionDirectoryStyleIds.Count -eq 0
+                ) {
+                    throw 'Internal Table of Figures style map was not initialized.'
+                }
+                foreach ($styleId in @($script:CaptionDirectoryStyleIds)) {
+                    $paragraphs = @($xml.SelectNodes(
+                        "//w:p[w:pPr/w:pStyle[@w:val='$styleId']]",
+                        $namespaces
+                    ))
+                    foreach ($paragraph in $paragraphs) {
+                        Clear-DirectoryParagraphOverrides -Paragraph $paragraph
+                    }
+                }
+            }
+            elseif ($partName -eq 'word/settings.xml') {
+                $settingsRoot = $xml.SelectSingleNode('/w:settings', $namespaces)
+                if ($null -eq $settingsRoot) {
+                    throw 'Word settings root was not found in settings.xml.'
+                }
+                $updateFields = Ensure-WChild `
+                    -Owner $xml -Parent $settingsRoot -LocalName 'updateFields'
+                Set-WAttribute `
+                    -Owner $xml -Node $updateFields -Name 'val' -Value 'true'
+            }
+            else {
+                throw "Unsupported DOCX part: $partName"
             }
 
             $entry.Delete()
@@ -389,6 +721,7 @@ function Set-OfficialTocOoxml {
     finally {
         $archive.Dispose()
         Remove-Variable -Name TocStyleIds -Scope Script -ErrorAction SilentlyContinue
+        Remove-Variable -Name CaptionDirectoryStyleIds -Scope Script -ErrorAction SilentlyContinue
     }
 }
 
@@ -466,6 +799,26 @@ function Update-WordRangeFields {
                 [void][Runtime.InteropServices.Marshal]::ReleaseComObject($field)
             }
         }
+    }
+}
+
+function Update-WordDocumentFields {
+    param([Parameter(Mandatory = $true)]$Document)
+
+    foreach ($storyType in 1..17) {
+        try {
+            $range = $Document.StoryRanges.Item($storyType)
+            while ($null -ne $range) {
+                Update-WordRangeFields -Range $range
+                $range = $range.NextStoryRange
+            }
+        }
+        catch {
+            # A document does not necessarily contain every Word story type.
+        }
+    }
+    foreach ($toc in @($Document.TablesOfContents)) {
+        $toc.Update() | Out-Null
     }
 }
 
@@ -954,6 +1307,37 @@ function Split-TableSegmentsForContinuation {
                 continue
             }
 
+            # Explicit continuation splitting inserts a copy of the first row
+            # into every later segment.  That is only safe when every row uses
+            # the same cell grid as the header.  Questionnaire matrices often
+            # merge header cells across a finer body grid (for example 3 header
+            # cells over 19 response columns).  Word can repeat that native
+            # header itself, but a copied row cannot be inserted into the
+            # incompatible grid without corrupting the table.  Keep the native
+            # repeating header and skip explicit ``续表`` segmentation there.
+            $sourceHeader = $table.Rows.Item(1)
+            $headerCellCount = $sourceHeader.Cells.Count
+            $compatibleGrid = $true
+            for ($rowIndex = 2; $rowIndex -le $table.Rows.Count; $rowIndex++) {
+                $gridRow = $table.Rows.Item($rowIndex)
+                try {
+                    if ($gridRow.Cells.Count -ne $headerCellCount) {
+                        $compatibleGrid = $false
+                        break
+                    }
+                }
+                finally {
+                    try { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($gridRow) } catch {}
+                }
+            }
+            if (-not $compatibleGrid) {
+                Write-Warning (
+                    "Table $tableIndex uses merged/incompatible row grids; " +
+                    "kept Word's native repeating header and skipped explicit continuation splitting."
+                )
+                continue
+            }
+
             $boundaries = New-Object System.Collections.Generic.List[int]
             $previousPage = 0
             for ($rowIndex = 2; $rowIndex -le $table.Rows.Count; $rowIndex++) {
@@ -985,7 +1369,6 @@ function Split-TableSegmentsForContinuation {
                 }
             }
             $orderedContinuations = @($continuationTables | Sort-Object { $_.Range.Start })
-            $sourceHeader = $table.Rows.Item(1)
             $previousTable = $table
             foreach ($continuationTable in $orderedContinuations) {
                 Copy-TableHeaderRow -SourceRow $sourceHeader -TargetTable $continuationTable
@@ -1123,6 +1506,8 @@ function Compact-TableContinuations {
 # document uses a 10.5 pt Normal style as the character-indent measuring base,
 # while all visible TOC text is directly formatted as 12 pt Song.  Keeping that
 # distinction is what makes 2/4 character indents compute to 21/42 pt.
+$coreProperties = Get-DocxCoreProperties -Path $documentPath
+$documentType = $null
 $word = $null
 $document = $null
 try {
@@ -1130,31 +1515,41 @@ try {
     $word.Visible = $false
     $word.DisplayAlerts = 0
     $document = $word.Documents.Open($documentPath, $false, $false)
+    $documentType = Resolve-YibinDocumentType `
+        -Document $document `
+        -CoreProperties $coreProperties
+    Write-Host "Word document profile: $documentType"
 
     try { $document.Bookmarks.ShowHidden = $true } catch {}
     Normalize-NativeCaptionSequences -Document $document -Word $word
 
-    foreach ($storyType in 1..17) {
-        try {
-            $range = $document.StoryRanges.Item($storyType)
-            while ($null -ne $range) {
-                Update-WordRangeFields -Range $range
-                $range = $range.NextStoryRange
-            }
-        }
-        catch {
-            # A document does not necessarily contain every Word story type.
-        }
-    }
-    foreach ($toc in @($document.TablesOfContents)) {
-        $toc.Update() | Out-Null
-    }
+    Update-WordDocumentFields -Document $document
 
     # -1 is wdStyleNormal and is locale-independent.
     $normalStyle = $document.Styles.Item(-1)
     $normalStyle.Font.NameFarEast = '宋体'
     $normalStyle.Font.Name = 'Times New Roman'
     $normalStyle.Font.Size = 10.5
+
+    $thesisOnlyStyleNames = @(
+        'ChineseAbstract',
+        'EnglishAbstract',
+        'Keywords',
+        'FrontTitle',
+        '宜宾论文-中文页标题',
+        '宜宾论文-英文摘要标题',
+        '宜宾论文-目录标题',
+        '宜宾论文-附录标题',
+        '宜宾论文-中文摘要正文',
+        '宜宾论文-英文摘要正文',
+        '宜宾论文-关键词',
+        'DeclarationBody',
+        'DeclarationSignature',
+        'DeclarationDate',
+        'DeclarationRegulationLead',
+        'DeclarationRegulationClause',
+        'DeclarationRegulationItem'
+    )
 
     foreach ($contract in @(
         @('First Paragraph', '宋体', 'Times New Roman', 12, $false),
@@ -1218,6 +1613,9 @@ try {
         @('Header', '宋体', 'Times New Roman', 9, $false),
         @('Footer', '宋体', 'Times New Roman', 9, $false)
     )) {
+        if ($documentType -ne 'thesis' -and $contract[0] -in $thesisOnlyStyleNames) {
+            continue
+        }
         Set-StyleFont `
             -Document $document `
             -Name $contract[0] `
@@ -1227,48 +1625,105 @@ try {
             -Bold ([bool]$contract[4])
     }
 
-    foreach ($level in 1..3) {
-        try {
-            $tocStyle = $document.Styles.Item("TOC $level")
-            $leftIndent = @(0, 21, 42)[$level - 1]
-            $characterIndent = @(0, 2, 4)[$level - 1]
-            $tocStyle.Font.NameFarEast = '宋体'
-            $tocStyle.Font.Name = '宋体'
-            $tocStyle.Font.Size = 12
-            $tocStyle.Font.Bold = 0
-            $tocStyle.ParagraphFormat.CharacterUnitFirstLineIndent = 0
-            $tocStyle.ParagraphFormat.FirstLineIndent = 0
-            $tocStyle.ParagraphFormat.CharacterUnitLeftIndent = $characterIndent
-            $tocStyle.ParagraphFormat.LeftIndent = $leftIndent
-            $tocStyle.ParagraphFormat.Alignment = 3
-            $tocStyle.ParagraphFormat.SpaceBefore = 0
-            $tocStyle.ParagraphFormat.SpaceAfter = 0
-            $tocStyle.ParagraphFormat.LineSpacingRule = if ($level -lt 3) { 1 } else { 0 }
-            $tocStyle.ParagraphFormat.LineSpacing = if ($level -lt 3) { 18 } else { 12 }
-            $tocStyle.ParagraphFormat.TabStops.ClearAll()
-            [void]$tocStyle.ParagraphFormat.TabStops.Add(438.85, 2, 1)
+    $profileStyleContracts = switch ($documentType) {
+        'proposal' {
+            @(
+                @('宜宾开题-标题', '楷体', 'Times New Roman', 18, $true),
+                @('宜宾开题-副标题', '宋体', 'Times New Roman', 12, $true),
+                @('宜宾开题-栏目', '黑体', 'Times New Roman', 12, $true),
+                @('宜宾开题-正文', '宋体', 'Times New Roman', 12, $false),
+                @('宜宾开题-提示', '宋体', 'Times New Roman', 12, $false),
+                @('宜宾开题-无编号标题', '楷体', 'Times New Roman', 15, $true),
+                @('宜宾开题-签名', '宋体', 'Times New Roman', 12, $false)
+            )
         }
-        catch {
-            # A short document may not materialize every TOC level.
+        'literature-review' {
+            @(
+                @('宜宾综述-文档标题', '黑体', 'Times New Roman', 28, $true),
+                @('宜宾综述-论文题目', '黑体', 'Times New Roman', 18, $true),
+                @('宜宾综述-信息标签', '黑体', 'Times New Roman', 18, $true),
+                @('宜宾综述-信息值', '宋体', 'Times New Roman', 16, $true)
+            )
         }
+        default { @() }
+    }
+    foreach ($contract in $profileStyleContracts) {
+        Set-StyleFont `
+            -Document $document `
+            -Name $contract[0] `
+            -EastAsia $contract[1] `
+            -Latin $contract[2] `
+            -Size ([double]$contract[3]) `
+            -Bold ([bool]$contract[4])
     }
 
-    try {
-        $tocHeadingStyle = $document.Styles.Item('宜宾论文-目录标题')
-        $tocHeadingStyle.ParagraphFormat.Alignment = 1
-        $tocHeadingStyle.ParagraphFormat.SpaceBefore = 0
-        $tocHeadingStyle.ParagraphFormat.SpaceAfter = 0
-        $tocHeadingStyle.ParagraphFormat.LineSpacingRule = 0
-    }
-    catch {
-        # The generated document is still checked paragraph-by-paragraph below.
+    if ($documentType -eq 'thesis') {
+        foreach ($level in 1..3) {
+            try {
+                $tocStyle = $document.Styles.Item("TOC $level")
+                $leftIndent = @(0, 21, 42)[$level - 1]
+                $characterIndent = @(0, 2, 4)[$level - 1]
+                $tocStyle.Font.NameFarEast = '宋体'
+                $tocStyle.Font.Name = '宋体'
+                $tocStyle.Font.Size = 12
+                $tocStyle.Font.Bold = 0
+                $tocStyle.ParagraphFormat.CharacterUnitFirstLineIndent = 0
+                $tocStyle.ParagraphFormat.FirstLineIndent = 0
+                $tocStyle.ParagraphFormat.CharacterUnitLeftIndent = $characterIndent
+                $tocStyle.ParagraphFormat.LeftIndent = $leftIndent
+                $tocStyle.ParagraphFormat.Alignment = 3
+                $tocStyle.ParagraphFormat.SpaceBefore = 0
+                $tocStyle.ParagraphFormat.SpaceAfter = 0
+                $tocStyle.ParagraphFormat.LineSpacingRule = if ($level -lt 3) { 1 } else { 0 }
+                $tocStyle.ParagraphFormat.LineSpacing = if ($level -lt 3) { 18 } else { 12 }
+                $tocStyle.ParagraphFormat.TabStops.ClearAll()
+                [void]$tocStyle.ParagraphFormat.TabStops.Add(438.85, 2, 1)
+            }
+            catch {
+                # A short thesis may not materialize every TOC level.
+            }
+        }
+
+        # -36 is wdStyleTableOfFigures and is locale-independent. Word applies
+        # it to entries generated by both the figure- and table-directory fields.
+        $captionDirectoryStyle = $document.Styles.Item(-36)
+        $captionDirectoryStyle.Font.NameFarEast = '宋体'
+        $captionDirectoryStyle.Font.Name = '宋体'
+        $captionDirectoryStyle.Font.Size = 12
+        $captionDirectoryStyle.Font.Bold = 0
+        $captionDirectoryStyle.ParagraphFormat.CharacterUnitFirstLineIndent = 0
+        $captionDirectoryStyle.ParagraphFormat.FirstLineIndent = 0
+        $captionDirectoryStyle.ParagraphFormat.CharacterUnitLeftIndent = 0
+        $captionDirectoryStyle.ParagraphFormat.LeftIndent = 0
+        $captionDirectoryStyle.ParagraphFormat.Alignment = 3
+        $captionDirectoryStyle.ParagraphFormat.SpaceBefore = 0
+        $captionDirectoryStyle.ParagraphFormat.SpaceAfter = 0
+        $captionDirectoryStyle.ParagraphFormat.LineSpacingRule = 1
+        $captionDirectoryStyle.ParagraphFormat.LineSpacing = 18
+        $captionDirectoryStyle.ParagraphFormat.TabStops.ClearAll()
+        [void]$captionDirectoryStyle.ParagraphFormat.TabStops.Add(438.85, 2, 1)
+
+        try {
+            $tocHeadingStyle = $document.Styles.Item('宜宾论文-目录标题')
+            $tocHeadingStyle.ParagraphFormat.Alignment = 1
+            $tocHeadingStyle.ParagraphFormat.SpaceBefore = 0
+            $tocHeadingStyle.ParagraphFormat.SpaceAfter = 0
+            $tocHeadingStyle.ParagraphFormat.LineSpacingRule = 0
+        }
+        catch {
+            # The generated thesis is still checked paragraph-by-paragraph below.
+        }
     }
 
     Stabilize-TableRowsForContinuation -Document $document
     Repair-OrphanedTableHeaders -Document $document
     Add-TableContinuations -Document $document
-    Compact-TableContinuations -Document $document
     Set-CitationFieldStyles -Document $document
+    $document.Repaginate()
+    # Continuation captions and row stabilization can change physical page
+    # positions.  Refresh the native TOC/figure/table fields only after those
+    # layout changes have settled so their cached page numbers are current.
+    Update-WordDocumentFields -Document $document
     $document.Repaginate()
     $document.Save()
 }
@@ -1279,10 +1734,12 @@ finally {
 # COM cannot persist w:left and w:leftChars simultaneously on every Word
 # version. Patch the two OOXML parts after the field update, then reopen the
 # result read-only for computed-format and PDF verification.
-Set-OfficialTocOoxml -Path $documentPath
+if ($documentType -eq 'thesis') {
+    Set-OfficialTocOoxml -Path $documentPath
+}
 
 if ($RefreshOnly) {
-    Write-Host "Word fields refreshed and document repaginated: $documentPath"
+    Write-Host "Word fields refreshed and document repaginated ($documentType): $documentPath"
     return
 }
 
@@ -1299,10 +1756,29 @@ try {
     Assert-Font 'Normal East Asian font' $normalStyle.Font.NameFarEast @('宋体', 'SimSun')
     Assert-Near 'Normal measuring size' $normalStyle.Font.Size 10.5
 
+    if ($documentType -eq 'proposal') {
+        Assert-ProposalProfile -Document $document
+    }
+    elseif ($documentType -eq 'literature-review') {
+        Assert-LiteratureReviewProfile -Document $document
+    }
+
+    if ($documentType -ne 'thesis') {
+        if (-not [string]::IsNullOrWhiteSpace($PdfOutput)) {
+            # 17 = wdExportFormatPDF
+            $document.ExportAsFixedFormat($pdfPath, 17)
+            Write-Host "PDF exported: $pdfPath"
+        }
+        Write-Host "Word fields refreshed and profile audited ($documentType): $documentPath"
+        return
+    }
+
     $coverLogo = @()
     $coverThesisType = @()
     $coverTitle = @()
+    $coverVersions = @()
     $coverFields = @()
+    $coverValueLines = @()
     $coverDates = @()
     $declarationTitles = @()
     $declarationBodies = @()
@@ -1312,6 +1788,7 @@ try {
     $regulationItems = @()
     $tocHeadings = @()
     $tocParagraphs = @{}
+    $captionDirectoryParagraphs = @()
     foreach ($level in 1..3) { $tocParagraphs[$level] = @() }
 
     foreach ($paragraph in @($document.Paragraphs)) {
@@ -1319,8 +1796,10 @@ try {
         switch -Regex ($styleName) {
             '^CoverLogo$' { $coverLogo += $paragraph; continue }
             '^CoverThesisType$' { $coverThesisType += $paragraph; continue }
-            '^CoverTitle$' { $coverTitle += $paragraph; continue }
+            '^CoverTitle(?:WithVersion)?$' { $coverTitle += $paragraph; continue }
+            '^CoverVersion$' { $coverVersions += $paragraph; continue }
             '^CoverField$' { $coverFields += $paragraph; continue }
+            '^CoverValueLine$' { $coverValueLines += $paragraph; continue }
             '^CoverDate$' { $coverDates += $paragraph; continue }
             '^DeclarationTitle$' { $declarationTitles += $paragraph; continue }
             '^DeclarationBody$' { $declarationBodies += $paragraph; continue }
@@ -1331,6 +1810,10 @@ try {
             '^(?:Yibin TOC Heading|宜宾论文-目录标题)$' { $tocHeadings += $paragraph; continue }
             '(?i)^TOC\s+([1-3])$' {
                 $tocParagraphs[[int]$Matches[1]] += $paragraph
+                continue
+            }
+            '(?i)^(?:Table of Figures|图表目录)$' {
+                $captionDirectoryParagraphs += $paragraph
                 continue
             }
         }
@@ -1363,8 +1846,33 @@ try {
     if ($coverTitle[0].Format.Alignment -ne 1) { throw 'Cover title must be centered.' }
     if ($coverTitle[0].Range.Font.Underline -eq 0) { throw 'Cover title must use a single underline.' }
 
+    if ($coverVersions.Count -gt 1) {
+        throw "CoverVersion paragraph count expected at most 1, got $($coverVersions.Count)"
+    }
+    $coverTitleStyle = Get-StyleName -Paragraph $coverTitle[0]
+    if ($coverVersions.Count -eq 1) {
+        if ($coverTitleStyle -ne 'CoverTitleWithVersion') {
+            throw "Cover title with a version must use CoverTitleWithVersion, got '$coverTitleStyle'"
+        }
+        Assert-Font 'Cover version font' $coverVersions[0].Range.Font.NameFarEast @('黑体', 'SimHei')
+        Assert-Near 'Cover version size' $coverVersions[0].Range.Font.Size 14
+        if ($coverVersions[0].Range.Font.Bold -ne 0) { throw 'Cover version must not be bold.' }
+        if ($coverVersions[0].Format.Alignment -ne 1) { throw 'Cover version must be centered.' }
+    }
+    elseif ($coverTitleStyle -ne 'CoverTitle') {
+        throw "Cover title without a version must use CoverTitle, got '$coverTitleStyle'"
+    }
+
     if ($coverFields.Count -ne 6) { throw "CoverField paragraph count expected 6, got $($coverFields.Count)" }
-    if ($coverDates.Count -ne 0) { throw 'The official cover must not contain a CoverDate paragraph.' }
+    if ($coverDates.Count -gt 1) {
+        throw "CoverDate paragraph count expected at most 1, got $($coverDates.Count)"
+    }
+    if ($coverDates.Count -eq 1) {
+        Assert-Font 'Cover date font' $coverDates[0].Range.Font.NameFarEast @('宋体', 'SimSun')
+        Assert-Near 'Cover date size' $coverDates[0].Range.Font.Size 15
+        if ($coverDates[0].Range.Font.Bold -eq 0) { throw 'Cover date must be bold.' }
+        if ($coverDates[0].Format.Alignment -ne 1) { throw 'Cover date must be centered.' }
+    }
     $fieldTokens = @(
         @{ Tokens = @('学院（部）') },
         @{ Tokens = @('专业') },
@@ -1383,7 +1891,7 @@ try {
     }
 
     $coverValueParagraphs = @()
-    foreach ($paragraph in @($document.Paragraphs)) {
+    foreach ($paragraph in $coverValueLines) {
         $hasCoverValue = $false
         foreach ($character in @($paragraph.Range.Characters)) {
             $characterStyle = ''
@@ -1407,7 +1915,7 @@ try {
     }
     # Empty fill slots deliberately contain no padding characters, so Word COM
     # cannot enumerate them by character style.  Exact nine-slot geometry is
-    # enforced by the deterministic OOXML audit in tests/audit_format.py.
+    # enforced by the deterministic OOXML audit in lib/audit_format.py.
 
     $originalityTitle = $declarationTitles | Where-Object {
         (Get-ParagraphText -Paragraph $_) -eq '原创性声明'
@@ -1428,8 +1936,10 @@ try {
     if ($mainDeclaration.Format.LineSpacingRule -ne 2) { throw 'Declaration body must use double line spacing.' }
     Assert-Near 'Declaration body line spacing' $mainDeclaration.Format.LineSpacing 24 1.0
 
-    if ($declarationSignatures.Count -lt 1 -or
-        -not ((Get-ParagraphText -Paragraph $declarationSignatures[0]).StartsWith('学位论文作者：'))) {
+    $officialAuthorSignature = $declarationSignatures | Where-Object {
+        (Get-ParagraphText -Paragraph $_).StartsWith('学位论文作者：')
+    } | Select-Object -First 1
+    if ($null -eq $officialAuthorSignature) {
         throw 'The official signature line must start with 学位论文作者：.'
     }
 
@@ -1472,14 +1982,26 @@ try {
     Assert-Near 'Regulation clause first-line indent' $regulationClauses[0].Format.FirstLineIndent 35 1.0
     Assert-Near 'Regulation item left indent' $regulationItems[0].Format.LeftIndent 7.15 1.0
 
-    if ($tocHeadings.Count -ne 1) { throw "TOC heading paragraph count expected 1, got $($tocHeadings.Count)" }
-    Assert-Text 'TOC heading text' (Get-ParagraphText -Paragraph $tocHeadings[0]) '目录'
-    Assert-Font 'TOC heading font' $tocHeadings[0].Range.Font.NameFarEast @('黑体', 'SimHei')
-    Assert-Near 'TOC heading size' $tocHeadings[0].Range.Font.Size 16
-    if ($tocHeadings[0].Format.Alignment -ne 1) { throw 'TOC heading must be centered.' }
-    if ($tocHeadings[0].Format.LineSpacingRule -ne 0) { throw 'TOC heading must use single line spacing.' }
-    Assert-Near 'TOC heading before spacing' $tocHeadings[0].Format.SpaceBefore 0
-    Assert-Near 'TOC heading after spacing' $tocHeadings[0].Format.SpaceAfter 0
+    $expectedDirectoryHeadings = @('目录', '图目录', '表目录')
+    if ($tocHeadings.Count -ne $expectedDirectoryHeadings.Count) {
+        throw "Directory heading paragraph count expected $($expectedDirectoryHeadings.Count), got $($tocHeadings.Count)"
+    }
+    $actualDirectoryHeadings = @(
+        $tocHeadings | ForEach-Object { Get-ParagraphText -Paragraph $_ }
+    )
+    foreach ($expectedHeading in $expectedDirectoryHeadings) {
+        if ($actualDirectoryHeadings -notcontains $expectedHeading) {
+            throw "Directory heading '$expectedHeading' was not found."
+        }
+    }
+    foreach ($tocHeading in $tocHeadings) {
+        Assert-Font 'Directory heading font' $tocHeading.Range.Font.NameFarEast @('黑体', 'SimHei')
+        Assert-Near 'Directory heading size' $tocHeading.Range.Font.Size 16
+        if ($tocHeading.Format.Alignment -ne 1) { throw 'Directory heading must be centered.' }
+        if ($tocHeading.Format.LineSpacingRule -ne 0) { throw 'Directory heading must use single line spacing.' }
+        Assert-Near 'Directory heading before spacing' $tocHeading.Format.SpaceBefore 0
+        Assert-Near 'Directory heading after spacing' $tocHeading.Format.SpaceAfter 0
+    }
 
     foreach ($level in 1..3) {
         if ($tocParagraphs[$level].Count -eq 0) { throw "TOC $level has no materialized paragraphs." }
@@ -1514,25 +2036,61 @@ try {
         }
     }
 
+    if ($captionDirectoryParagraphs.Count -eq 0) {
+        throw 'Figure/table directory fields have no materialized Table of Figures paragraphs.'
+    }
+    foreach ($paragraph in $captionDirectoryParagraphs) {
+        $font = $paragraph.Range.Font
+        $format = $paragraph.Format
+        Assert-Font 'Figure/table directory East Asian font' $font.NameFarEast @('宋体', 'SimSun')
+        Assert-Font 'Figure/table directory Latin font' $font.Name @('宋体', 'SimSun')
+        Assert-Near 'Figure/table directory size' $font.Size 12
+        Assert-Near 'Figure/table directory first-line indent' $format.FirstLineIndent 0
+        Assert-Near 'Figure/table directory character first-line indent' $format.CharacterUnitFirstLineIndent 0 0.05
+        Assert-Near 'Figure/table directory left indent' $format.LeftIndent 0 1.0
+        Assert-Near 'Figure/table directory character left indent' $format.CharacterUnitLeftIndent 0 0.05
+        if ($format.Alignment -ne 3) {
+            throw 'Figure/table directory entries must be justified (Alignment=3).'
+        }
+        if ($format.LineSpacingRule -ne 1) {
+            throw 'Figure/table directory entries must use 1.5-line spacing.'
+        }
+        Assert-Near 'Figure/table directory line spacing' $format.LineSpacing 18 1.0
+        Assert-Near 'Figure/table directory before spacing' $format.SpaceBefore 0
+        Assert-Near 'Figure/table directory after spacing' $format.SpaceAfter 0
+        $officialTab = @($format.TabStops) | Where-Object {
+            [math]::Abs($_.Position - 438.85) -le 0.75 -and
+            $_.Alignment -eq 2 -and $_.Leader -eq 1
+        } | Select-Object -First 1
+        if ($null -eq $officialTab) {
+            throw 'Figure/table directory entry is missing the 438.85 pt right-aligned dot-leader tab.'
+        }
+    }
+
     # Existing body checks guard against the official 10.5 pt Normal measuring
     # base leaking into visible 12 pt body and abstract styles.
     foreach ($paragraph in @($document.Paragraphs)) {
         $styleName = Get-StyleName -Paragraph $paragraph
+        $paragraphText = Get-ParagraphText -Paragraph $paragraph
+        if ([string]::IsNullOrWhiteSpace($paragraphText) -and
+            $styleName -in @('First Paragraph', '宜宾论文-首段', 'Body Text', '宜宾论文-正文')) {
+            continue
+        }
         $font = $paragraph.Range.Font
         $format = $paragraph.Format
         switch ($styleName) {
             { $_ -in @('First Paragraph', '宜宾论文-首段') } {
                 Assert-Font 'Body first paragraph font' $font.NameFarEast @('宋体', 'SimSun')
-                Assert-Near 'Body first paragraph size' $font.Size 12
+                Assert-Near 'Body first paragraph size' (Get-ParagraphFontSize -Paragraph $paragraph) 12
                 Assert-Near 'Body first paragraph first-line indent' $format.FirstLineIndent 24 1.0
             }
             { $_ -in @('Body Text', '宜宾论文-正文') } {
                 Assert-Font 'Body text font' $font.NameFarEast @('宋体', 'SimSun')
-                Assert-Near 'Body text size' $font.Size 12
+                Assert-Near 'Body text size' (Get-ParagraphFontSize -Paragraph $paragraph) 12
             }
             { $_ -in @('Heading 1', '标题 1', 'Yibin Heading 1', '宜宾论文-一级标题') } {
                 Assert-Font 'Heading 1 font' $font.NameFarEast @('黑体', 'SimHei')
-                Assert-Near 'Heading 1 size' $font.Size 16
+                Assert-Near 'Heading 1 size' (Get-ParagraphFontSize -Paragraph $paragraph) 16
                 if ($font.Bold -eq 0) { throw 'Heading 1 must be bold.' }
                 if ($format.Alignment -eq 1) {
                     Assert-Near 'Science Heading 1 first-line indent' $format.FirstLineIndent 0
@@ -1543,30 +2101,30 @@ try {
             }
             { $_ -in @('Heading 2', '标题 2', 'Yibin Heading 2', '宜宾论文-二级标题') } {
                 Assert-Font 'Heading 2 font' $font.NameFarEast @('楷体', 'KaiTi')
-                Assert-Near 'Heading 2 size' $font.Size 15
+                Assert-Near 'Heading 2 size' (Get-ParagraphFontSize -Paragraph $paragraph) 15
                 if ($font.Bold -eq 0) { throw 'Heading 2 must be bold.' }
                 Assert-Near 'Heading 2 first-line indent' $format.FirstLineIndent 30 1.0
             }
             { $_ -in @('Heading 3', '标题 3', 'Yibin Heading 3', '宜宾论文-三级标题') } {
                 Assert-Font 'Heading 3 font' $font.NameFarEast @('宋体', 'SimSun')
-                Assert-Near 'Heading 3 size' $font.Size 14
+                Assert-Near 'Heading 3 size' (Get-ParagraphFontSize -Paragraph $paragraph) 14
                 if ($font.Bold -eq 0) { throw 'Heading 3 must be bold.' }
                 Assert-Near 'Heading 3 first-line indent' $format.FirstLineIndent 28 1.0
             }
             { $_ -in @('Heading 4', '标题 4', 'Yibin Heading 4', '宜宾论文-四级标题') } {
                 Assert-Font 'Heading 4 font' $font.NameFarEast @('宋体', 'SimSun')
-                Assert-Near 'Heading 4 size' $font.Size 14
+                Assert-Near 'Heading 4 size' (Get-ParagraphFontSize -Paragraph $paragraph) 14
                 if ($font.Bold -eq 0) { throw 'Heading 4 must be bold.' }
                 Assert-Near 'Heading 4 first-line indent' $format.FirstLineIndent 28 1.0
             }
             { $_ -in @('ChineseAbstract', '宜宾论文-中文摘要正文') } {
                 Assert-Font 'Chinese abstract font' $font.NameFarEast @('宋体', 'SimSun')
-                Assert-Near 'Chinese abstract size' $font.Size 12
+                Assert-Near 'Chinese abstract size' (Get-ParagraphFontSize -Paragraph $paragraph) 12
                 Assert-Near 'Chinese abstract first-line indent' $format.FirstLineIndent 24 1.0
             }
             { $_ -in @('EnglishAbstract', '宜宾论文-英文摘要正文') } {
                 Assert-Font 'English abstract font' $font.Name @('Times New Roman')
-                Assert-Near 'English abstract size' $font.Size 12
+                Assert-Near 'English abstract size' (Get-ParagraphFontSize -Paragraph $paragraph) 12
                 Assert-Near 'English abstract first-line indent' $format.FirstLineIndent 0
             }
         }

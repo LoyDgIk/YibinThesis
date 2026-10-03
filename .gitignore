@@ -1,6 +1,10 @@
 /build/
 /tmp/
 /.tools/
+/main.tex
+/metadata.tex
+/references.bib
+/chapters/
 __pycache__/
 *.pyc
 *.aux

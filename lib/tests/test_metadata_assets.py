@@ -10,9 +10,9 @@ from pathlib import Path
 from docx import Document
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 SPEC = importlib.util.spec_from_file_location(
-    "yibinthesis_build_word_metadata_assets", ROOT / "tools" / "build_word.py"
+    "yibinthesis_build_word_metadata_assets", ROOT / "lib" / "build_word.py"
 )
 assert SPEC is not None and SPEC.loader is not None
 BUILD_WORD = importlib.util.module_from_spec(SPEC)

@@ -23,6 +23,8 @@ A_NS = "http://schemas.openxmlformats.org/drawingml/2006/main"
 A = f"{{{A_NS}}}"
 PR_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
 PR = f"{{{PR_NS}}}"
+CP_NS = "http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
+CP = f"{{{CP_NS}}}"
 ROOT = Path(__file__).resolve().parents[1]
 OFFICIAL_LOGO_SHA256 = "5E3A203868F8EE661D7185D35404C555399EEC14CF7C467DAAC12DA54F516AFA"
 
@@ -571,11 +573,21 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
                 for member in members
                 if member.startswith("customXml/") and member.endswith(".xml")
             }
+            core_properties = ET.fromstring(archive.read("docProps/core.xml"))
     except (KeyError, OSError, ET.ParseError, zipfile.BadZipFile) as exc:
         audit.errors.append(f"cannot inspect generated {docx}: {exc}")
         return
 
     prefix = docx.name
+    keywords_node = core_properties.find(CP + "keywords")
+    keywords = "" if keywords_node is None else (keywords_node.text or "")
+    type_match = re.search(
+        r"(?:^|;)\s*document-type\s*=\s*(thesis|proposal|literature-review)",
+        keywords,
+        re.IGNORECASE,
+    )
+    document_type = type_match.group(1).casefold() if type_match else "thesis"
+    is_thesis = document_type == "thesis"
     by_id = styles_by_id(styles_root)
     by_name = style_map(styles_root)
     heading_num_ids: list[str] = []
@@ -664,7 +676,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
     )
     audit.true(
         f"{prefix}.TOC field is missing",
-        "TOC" in field_code and '1-3' in field_code,
+        not is_thesis or ("TOC" in field_code and '1-3' in field_code),
     )
     named: dict[str, list[ET.Element]] = {}
     for paragraph in paragraphs:
@@ -673,15 +685,30 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
 
     def only(style: str) -> ET.Element | None:
         matches = named.get(style.casefold(), [])
+        if not is_thesis:
+            return None
         audit.equal(f"{prefix}.{style}.count", len(matches), 1)
         return matches[0] if len(matches) == 1 else None
 
     cover_logo = only("CoverLogo")
     cover_type = only("CoverThesisType")
-    cover_title = only("CoverTitle")
+    cover_titles = named.get("covertitle", []) + named.get("covertitlewithversion", [])
+    audit.equal(
+        f"{prefix}.CoverTitle.variant.count",
+        len(cover_titles),
+        1 if is_thesis else 0,
+    )
+    cover_title = cover_titles[0] if len(cover_titles) == 1 else None
     cover_fields = named.get("coverfield", [])
-    audit.equal(f"{prefix}.CoverField.count", len(cover_fields), 6)
-    audit.equal(f"{prefix}.CoverDate.count", len(named.get("coverdate", [])), 0)
+    audit.equal(f"{prefix}.CoverField.count", len(cover_fields), 6 if is_thesis else 0)
+    audit.true(
+        f"{prefix}.CoverVersion.count must be optional and unique",
+        len(named.get("coverversion", [])) <= (1 if is_thesis else 0),
+    )
+    audit.true(
+        f"{prefix}.CoverDate.count must be optional and unique",
+        len(named.get("coverdate", [])) <= (1 if is_thesis else 0),
+    )
 
     if cover_logo is not None:
         extents = cover_logo.findall(f".//{WP}extent")
@@ -794,7 +821,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
         ([1800, 3214, 900, 2572], "925"),
         ([2880, 2906, 874, 1774], "926"),
         ([2880, 2906, 874, 1774], "926"),
-    )
+    ) if is_thesis else ()
     audit.equal(
         f"{prefix}.cover.geometry-table.count",
         len(cover_layout_tables),
@@ -905,8 +932,8 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
                 len(active_bottom_borders(cell)),
                 0,
             )
-    audit.equal(f"{prefix}.cover.value-cell.unique-count", len(value_cells), 9)
-    audit.equal(f"{prefix}.cover.layout-table.count", len(value_tables), 6)
+    audit.equal(f"{prefix}.cover.value-cell.unique-count", len(value_cells), 9 if is_thesis else 0)
+    audit.equal(f"{prefix}.cover.layout-table.count", len(value_tables), 6 if is_thesis else 0)
 
     declaration_title = next(
         (
@@ -916,7 +943,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
         ),
         None,
     )
-    audit.true(f"{prefix}.originality title missing", declaration_title is not None)
+    audit.true(f"{prefix}.originality title missing", not is_thesis or declaration_title is not None)
     declaration_body = next(
         (
             paragraph
@@ -925,7 +952,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
         ),
         None,
     )
-    audit.true(f"{prefix}.originality body missing", declaration_body is not None)
+    audit.true(f"{prefix}.originality body missing", not is_thesis or declaration_body is not None)
     if declaration_body is not None:
         _, paragraph_style_element = paragraph_style(declaration_body, by_id)
         indent = effective_p_element(
@@ -946,7 +973,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
     audit.equal(
         f"{prefix}.originality DeclarationSignature.count",
         len(originality_signatures),
-        1,
+        1 if is_thesis else 0,
     )
 
     regulation_contract = (
@@ -1027,13 +1054,41 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
             "360",
         )
 
-    toc_heading = only("宜宾论文-目录标题")
-    if toc_heading is not None:
+    toc_headings = named.get("宜宾论文-目录标题".casefold(), [])
+    audit.true(
+        f"{prefix}.宜宾论文-目录标题.count must be 1 to 3",
+        (not is_thesis and not toc_headings)
+        or (is_thesis and 1 <= len(toc_headings) <= 3),
+    )
+    directory_titles = {paragraph_text(paragraph) for paragraph in toc_headings}
+    if "图目录" in directory_titles:
+        audit.true(
+            f"{prefix}.figure directory field is missing",
+            '\\c "图"' in field_code,
+        )
+    if "表目录" in directory_titles:
+        audit.true(
+            f"{prefix}.table directory field is missing",
+            '\\c "表"' in field_code,
+        )
+    for heading_index, toc_heading in enumerate(toc_headings, start=1):
         _, toc_heading_style = paragraph_style(toc_heading, by_id)
         spacing = effective_p_element(toc_heading, toc_heading_style, by_id, "spacing")
-        audit.equal(f"{prefix}.toc.heading.before", twips_value(spacing, "before"), 0)
-        audit.equal(f"{prefix}.toc.heading.after", twips_value(spacing, "after"), 0)
-        audit.equal(f"{prefix}.toc.heading.line", attr(spacing, "line"), "240")
+        audit.equal(
+            f"{prefix}.toc.heading[{heading_index}].before",
+            twips_value(spacing, "before"),
+            0,
+        )
+        audit.equal(
+            f"{prefix}.toc.heading[{heading_index}].after",
+            twips_value(spacing, "after"),
+            0,
+        )
+        audit.equal(
+            f"{prefix}.toc.heading[{heading_index}].line",
+            attr(spacing, "line"),
+            "240",
+        )
 
     for level, expected_left, expected_chars, expected_line in (
         (1, 0, 0, 360),
@@ -1103,7 +1158,14 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
         for paragraph in paragraphs
         if paragraph_style(paragraph, by_id)[0].casefold() in caption_names
     ]
-    audit.true(f"{prefix}.Caption paragraph is missing", bool(captions))
+    # Literature reviews and proposal forms can legitimately contain no figures
+    # or tables.  Require at least one caption only for the thesis profile; when
+    # a non-thesis document does contain captions, the checks below still audit
+    # every caption's style, field, and bookmark structure.
+    audit.true(
+        f"{prefix}.Caption paragraph is missing",
+        bool(captions) or not is_thesis,
+    )
     for caption_index, paragraph in enumerate(captions, start=1):
         paragraph_style_name, paragraph_style_element = paragraph_style(paragraph, by_id)
         audit.true(
@@ -1531,7 +1593,9 @@ def audit_docx(audit: Audit, docx: Path, profile: str | None = None) -> None:
     if not docx.is_file():
         return
     try:
-        styles = style_map(load_part(docx, "word/styles.xml"))
+        styles_root = load_part(docx, "word/styles.xml")
+        styles = style_map(styles_root)
+        by_id = styles_by_id(styles_root)
         audit_geometry(audit, docx)
     except (KeyError, OSError, ET.ParseError, zipfile.BadZipFile) as exc:
         audit.errors.append(f"cannot inspect {docx}: {exc}")
@@ -1554,9 +1618,6 @@ def audit_docx(audit: Audit, docx: Path, profile: str | None = None) -> None:
     common = (
         ("Body Text", "SimSun", "Times New Roman", "24", False, "360", "200"),
         ("First Paragraph", "SimSun", "Times New Roman", "24", False, "360", "200"),
-        ("Heading 2", "KaiTi", "Times New Roman", "30", True, "360", "200"),
-        ("Heading 3", "SimSun", "Times New Roman", "28", True, "360", "200"),
-        ("Heading 4", "SimSun", "Times New Roman", "28", True, "360", "200"),
         ("ChineseAbstract", "SimSun", "Times New Roman", "24", False, "360", "200"),
     )
     for name, east_asia, latin, size, bold, line, first_chars in common:
@@ -1572,6 +1633,33 @@ def audit_docx(audit: Audit, docx: Path, profile: str | None = None) -> None:
             line_rule="auto",
             first_chars=first_chars,
         )
+
+    audit_style(
+        audit,
+        styles,
+        "宜宾论文-列表正文",
+        east_asia="SimSun",
+        latin="Times New Roman",
+        size="24",
+        bold=False,
+        line="360",
+        line_rule="auto",
+        first_chars="0",
+        first_line="0",
+    )
+
+    audit_style(
+        audit,
+        styles,
+        "宜宾论文-附录二级标题",
+        east_asia="KaiTi",
+        latin="Times New Roman",
+        size="30",
+        bold=True,
+        line="360",
+        line_rule="auto",
+        first_chars="200",
+    )
 
     for name, east_asia, size in (
         ("宜宾论文-一级标题", "SimHei", "32"),
@@ -1590,22 +1678,40 @@ def audit_docx(audit: Audit, docx: Path, profile: str | None = None) -> None:
             line="360",
             line_rule="auto",
             first_chars="200",
+            page_break=name == "宜宾论文-一级标题",
         )
 
-    audit_style(
-        audit,
-        styles,
-        "Heading 1",
-        east_asia="SimHei",
-        latin="Times New Roman",
-        size="32",
-        bold=True,
-        line="360",
-        line_rule="auto",
-        first_chars="200" if profile != "science" else None,
-        first_line="0" if profile == "science" else "480",
-        alignment="center" if profile == "science" else ("left" if profile == "humanities" else None),
-        page_break=True if profile == "science" else False,
+    custom_heading_ids: set[str] = set()
+    for level, custom_name in enumerate(
+        (
+            "宜宾论文-一级标题",
+            "宜宾论文-二级标题",
+            "宜宾论文-三级标题",
+            "宜宾论文-四级标题",
+        ),
+        start=1,
+    ):
+        builtin_id = f"Heading{level}"
+        builtin = by_id.get(builtin_id)
+        audit.true(f"{docx.name}.{builtin_id} built-in style is missing", builtin is not None)
+        if builtin is not None:
+            audit.equal(
+                f"{docx.name}.{builtin_id} built-in name",
+                style_name(builtin).casefold(),
+                f"heading {level}",
+            )
+        custom = styles.get(custom_name.casefold())
+        if custom is not None:
+            custom_id = attr(custom, "styleId") or ""
+            custom_heading_ids.add(custom_id)
+            audit.true(
+                f"{docx.name}.{custom_name} must not reuse {builtin_id}",
+                custom_id != builtin_id,
+            )
+    audit.equal(
+        f"{docx.name}.custom heading styleId count",
+        len(custom_heading_ids),
+        4,
     )
     audit_style(
         audit,
@@ -1737,6 +1843,26 @@ def audit_docx(audit: Audit, docx: Path, profile: str | None = None) -> None:
     audit_style(
         audit,
         styles,
+        "Table of Figures",
+        east_asia="SimSun",
+        latin="SimSun",
+        size="24",
+        bold=False,
+        line="360",
+        line_rule="auto",
+        first_chars="0",
+        first_line="0",
+        left="0",
+        left_chars="0",
+        alignment="both",
+        before="0",
+        after="0",
+        tab_pos="8777",
+    )
+
+    audit_style(
+        audit,
+        styles,
         "CoverThesisType",
         east_asia="SimHei",
         latin="Times New Roman",
@@ -1749,12 +1875,37 @@ def audit_docx(audit: Audit, docx: Path, profile: str | None = None) -> None:
     audit_style(
         audit,
         styles,
+        "CoverVersion",
+        east_asia="SimHei",
+        latin="Times New Roman",
+        size="28",
+        bold=False,
+        before="0",
+        after="460",
+        alignment="center",
+    )
+    audit_style(
+        audit,
+        styles,
         "CoverTitle",
         east_asia="SimHei",
         latin="Times New Roman",
         size="36",
         bold=True,
         underline=True,
+        alignment="center",
+    )
+    audit_style(
+        audit,
+        styles,
+        "CoverTitleWithVersion",
+        east_asia="SimHei",
+        latin="Times New Roman",
+        size="36",
+        bold=True,
+        underline=True,
+        before="0",
+        after="200",
         alignment="center",
     )
     audit_style(
@@ -1782,6 +1933,18 @@ def audit_docx(audit: Audit, docx: Path, profile: str | None = None) -> None:
         alignment="center",
         before="0",
         after="0",
+    )
+    audit_style(
+        audit,
+        styles,
+        "CoverDate",
+        east_asia="SimSun",
+        latin="Times New Roman",
+        size="30",
+        bold=True,
+        before="480",
+        after="0",
+        alignment="center",
     )
     audit_style(
         audit,
@@ -2006,7 +2169,7 @@ def main() -> int:
 
     audit = Audit()
     audit_latex(audit, args.class_file)
-    audit_word_builder(audit, ROOT / "tools" / "build_word.py")
+    audit_word_builder(audit, ROOT / "lib" / "word_core.py")
     audit_docx(audit, args.reference)
     audit_logo_asset(audit, args.logo)
     generated = args.generated

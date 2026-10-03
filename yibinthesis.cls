@@ -15,7 +15,36 @@
 \yibin@bibliographytrue
 \newif\ifyibin@strictfonts
 \yibin@strictfontsfalse
+\newif\ifyibin@proposal
+\yibin@proposalfalse
+\newif\ifyibin@literaturereview
+\yibin@literaturereviewfalse
+\newif\ifyibin@documenttypeselected
+\yibin@documenttypeselectedfalse
+\def\yibin@selecteddocumenttype{thesis}
 
+\newcommand{\yibin@selectdocumenttype}[2]{%
+  \ifyibin@documenttypeselected
+    \ClassError{yibinthesis}
+      {Document type options are mutually exclusive:
+       '\yibin@selecteddocumenttype' and '#1'}
+      {Select exactly one of thesis, proposal, or literature-review.}%
+  \else
+    \yibin@documenttypeselectedtrue
+    \def\yibin@selecteddocumenttype{#1}%
+    #2%
+  \fi
+}
+
+\DeclareOption{thesis}{%
+  \yibin@selectdocumenttype{thesis}{%
+    \yibin@proposalfalse\yibin@literaturereviewfalse}}
+\DeclareOption{proposal}{%
+  \yibin@selectdocumenttype{proposal}{%
+    \yibin@proposaltrue\yibin@literaturereviewfalse}}
+\DeclareOption{literature-review}{%
+  \yibin@selectdocumenttype{literature-review}{%
+    \yibin@proposalfalse\yibin@literaturereviewtrue}}
 \DeclareOption{humanities}{\yibin@sciencefalse}
 \DeclareOption{science}{\yibin@sciencetrue}
 \DeclareOption{nobibliography}{\yibin@bibliographyfalse}
@@ -173,13 +202,26 @@
 \tl_new:N \g_yibin_advisor_title_tl
 \tl_new:N \g_yibin_external_advisor_tl
 \tl_new:N \g_yibin_external_advisor_title_tl
+\tl_new:N \g_yibin_version_tl
 \tl_new:N \g_yibin_date_tl
 \tl_new:N \g_yibin_declassify_year_tl
 \tl_new:N \g_yibin_logo_tl
 \tl_new:N \g_yibin_author_signature_tl
 \tl_new:N \g_yibin_advisor_signature_tl
 \tl_new:N \g_yibin_signature_background_tl
+\tl_new:N \g_yibin_template_year_tl
+\tl_new:N \g_yibin_expected_template_year_tl
 \bool_new:N \g_yibin_confidential_bool
+
+% The opening report is the form extracted from the 2022 work-form.  Thesis
+% and literature-review documents use the 2024 thesis typography baseline.
+\ifyibin@proposal
+  \tl_gset:Nn \g_yibin_expected_template_year_tl {2022}
+\else
+  \tl_gset:Nn \g_yibin_expected_template_year_tl {2024}
+\fi
+\tl_gset:Nx \g_yibin_template_year_tl
+  {\tl_use:N \g_yibin_expected_template_year_tl}
 
 \keys_define:nn { yibin / metadata } {
   title                    .tl_gset:N = \g_yibin_title_tl,
@@ -194,7 +236,20 @@
   advisor-title            .tl_gset:N = \g_yibin_advisor_title_tl,
   external-advisor         .tl_gset:N = \g_yibin_external_advisor_tl,
   external-advisor-title   .tl_gset:N = \g_yibin_external_advisor_title_tl,
+  version                  .tl_gset:N = \g_yibin_version_tl,
   date                     .tl_gset:N = \g_yibin_date_tl,
+  template-year            .code:n = {
+    \tl_set:Nx \l_tmpa_tl {\tl_trim_spaces:n {#1}}
+    \tl_if_eq:NNTF \l_tmpa_tl \g_yibin_expected_template_year_tl
+      {\tl_gset:Nx \g_yibin_template_year_tl {\tl_use:N \l_tmpa_tl}}
+      {
+        \ClassError{yibinthesis}
+          {Invalid template-year '#1' for document type
+           '\yibindocumenttype'}
+          {Document type '\yibindocumenttype' only accepts
+           template-year=\tl_use:N \g_yibin_expected_template_year_tl.}
+      }
+  },
   declassify-year          .tl_gset:N = \g_yibin_declassify_year_tl,
   logo                     .code:n = {
     \str_if_eq:nnTF {#1} {builtin}
@@ -231,6 +286,7 @@
   advisor-title           = {（填写职称）},
   external-advisor        = {},
   external-advisor-title  = {},
+  version                 = {},
   date                    = {},
   declassify-year         = {},
   logo                    = {builtin},
@@ -263,7 +319,15 @@
 \NewExpandableDocumentCommand{\yibinadvisortitle}{}{\tl_use:N \g_yibin_advisor_title_tl}
 \NewExpandableDocumentCommand{\yibinexternaladvisor}{}{\tl_use:N \g_yibin_external_advisor_tl}
 \NewExpandableDocumentCommand{\yibinexternaladvisortitle}{}{\tl_use:N \g_yibin_external_advisor_title_tl}
+\NewExpandableDocumentCommand{\yibinversion}{}{\tl_use:N \g_yibin_version_tl}
 \NewExpandableDocumentCommand{\yibindate}{}{\tl_use:N \g_yibin_date_tl}
+\NewDocumentCommand{\yibinifversion}{mm}{
+  \tl_if_empty:NTF \g_yibin_version_tl {#2} {#1}
+}
+\NewDocumentCommand{\yibinifdate}{mm}{
+  \tl_if_empty:NTF \g_yibin_date_tl {#2} {#1}
+}
+\NewExpandableDocumentCommand{\yibintemplateyear}{}{\tl_use:N \g_yibin_template_year_tl}
 \NewExpandableDocumentCommand{\yibindeclassifyyear}{}{\tl_use:N \g_yibin_declassify_year_tl}
 \NewExpandableDocumentCommand{\yibinlogo}{}{\tl_use:N \g_yibin_logo_tl}
 \NewExpandableDocumentCommand{\yibinauthorsignature}{}{\tl_use:N \g_yibin_author_signature_tl}
@@ -278,6 +342,20 @@
 }
 \ExplSyntaxOff
 
+\newcommand{\yibindocumenttype}{\yibin@selecteddocumenttype}
+
+\newcommand{\yibin@documentsubject}{%
+  \ifyibin@proposal
+    宜宾学院本科毕业论文（设计）开题报告%
+  \else
+    \ifyibin@literaturereview
+      宜宾学院本科毕业论文（设计）文献综述%
+    \else
+      宜宾学院本科生毕业论文（设计）%
+    \fi
+  \fi
+}
+
 \AtBeginDocument{
   % The build tool may provide derived (for example, whitened) signature
   % images here.  Source metadata and original image files remain untouched.
@@ -285,7 +363,7 @@
   \hypersetup{
     pdftitle={\yibintitle},
     pdfauthor={\yibinauthor},
-    pdfsubject={宜宾学院本科生毕业论文（设计） / \yibinenglishtitle},
+    pdfsubject={\yibin@documentsubject / \yibinenglishtitle},
     pdfcreator={XeLaTeX with yibinthesis class}
   }
 }
@@ -324,9 +402,9 @@
     {\thechapter}{0.5em}{}
   \titlespacing{\chapter}{0pt}{0pt}{24pt}
 \else
-  % The 2024 humanities Word template treats numbered level-one headings as
-  % in-flow headings: left aligned, two-character indent, and no forced page.
-  \titleclass{\chapter}{straight}
+  % Humanities level-one headings remain left aligned with a two-character
+  % indent, but each numbered chapter starts on a new page after the opening.
+  \titleclass{\chapter}{top}
   \titleformat{\chapter}[block]
     {\yibinhei\bfseries\zihao{3}}
     {\thechapter}{0.5em}{}
@@ -359,14 +437,22 @@
 \titlespacing{\subsubsection}{2em}{12pt}{6pt}
 
 \renewcommand{\contentsname}{目录}
-\renewcommand{\listfigurename}{插图目录}
-\renewcommand{\listtablename}{表格目录}
+\renewcommand{\listfigurename}{图目录}
+\renewcommand{\listtablename}{表目录}
 \renewcommand{\cfttoctitlefont}{\hfill\yibinhei\bfseries\zihao{3}}
 % Keep material after the trailing fill so TeX does not discard it at the
 % paragraph boundary and accidentally right-align the title.
 \renewcommand{\cftaftertoctitle}{\hfill\mbox{}}
 \setlength{\cftbeforetoctitleskip}{0pt}
 \setlength{\cftaftertoctitleskip}{24pt}
+\renewcommand{\cftloftitlefont}{\hfill\yibinhei\bfseries\zihao{3}}
+\renewcommand{\cftafterloftitle}{\hfill\mbox{}}
+\setlength{\cftbeforeloftitleskip}{0pt}
+\setlength{\cftafterloftitleskip}{24pt}
+\renewcommand{\cftlottitlefont}{\hfill\yibinhei\bfseries\zihao{3}}
+\renewcommand{\cftafterlottitle}{\hfill\mbox{}}
+\setlength{\cftbeforelottitleskip}{0pt}
+\setlength{\cftafterlottitleskip}{24pt}
 \renewcommand{\cftchapfont}{\yibinsong\mdseries\zihao{-4}}
 \renewcommand{\cftchappagefont}{\yibinsong\mdseries\zihao{-4}}
 \renewcommand{\cftsecfont}{\yibinsong\mdseries\zihao{-4}}
@@ -374,6 +460,12 @@
 \renewcommand{\cftsubsecfont}{\yibinsong\mdseries\zihao{-4}}
 \renewcommand{\cftsubsecpagefont}{\yibinsong\mdseries\zihao{-4}}
 \renewcommand{\cftchapleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cftfigfont}{\yibinsong\mdseries\zihao{-4}}
+\renewcommand{\cftfigpagefont}{\yibinsong\mdseries\zihao{-4}}
+\renewcommand{\cftfigleader}{\cftdotfill{\cftdotsep}}
+\renewcommand{\cfttabfont}{\yibinsong\mdseries\zihao{-4}}
+\renewcommand{\cfttabpagefont}{\yibinsong\mdseries\zihao{-4}}
+\renewcommand{\cfttableader}{\cftdotfill{\cftdotsep}}
 \setlength{\cftbeforechapskip}{0.25\baselineskip}
 % The official Word template uses absolute left indents of 0/21/42 pt for
 % levels one to three.  At the 12 pt TOC size these map to 0/1.75/3.5 em.
@@ -556,6 +648,12 @@
       \centering\yibin@covertitle
     \end{textblock*}
 
+    \yibinifversion{%
+      \begin{textblock*}{21cm}(0cm,12.55cm)
+        \centering\yibinhei\zihao{4}\yibinversion
+      \end{textblock*}%
+    }{}
+
     \begin{textblock*}{15.5cm}(3cm,13.447cm)
       \yibin@coverfield{学院（部）}{3.5cm}{11.6cm}{\yibincollege}
     \end{textblock*}
@@ -578,8 +676,13 @@
         {职称}{1.55cm}{3.1cm}{\yibinexternaladvisortitle}
     \end{textblock*}
 
-    % The 2024 official cover has no date.  Keep the metadata key accepted for
-    % source compatibility, but deliberately do not render it here.
+    \yibinifdate{%
+      \begin{textblock*}{21cm}(0cm,25.55cm)
+        \centering\yibinsong\bfseries\zihao{-3}\yibindate
+      \end{textblock*}%
+    }{}
+    % textblock* content does not enter the ordinary page list.  Keep one
+    % real page object so the fixed cover blocks ship before the declaration.
     \null
   \endgroup
   \clearpage
@@ -748,11 +851,17 @@
   \setcounter{section}{0}%
   \setcounter{subsection}{0}%
   \setcounter{subsubsection}{0}%
+  \ifyibin@science
+    \renewcommand{\thesection}{\Alph{yibinappendix}.\arabic{section}}%
+  \else
+    \renewcommand{\thesection}{（\chinese{section}）}%
+  \fi
   \chapter*{附录\Alph{yibinappendix}\quad #1}%
   \phantomsection
   \addcontentsline{toc}{chapter}{附录\Alph{yibinappendix}\quad #1}%
   \markboth{附录\Alph{yibinappendix}\quad #1}{附录\Alph{yibinappendix}\quad #1}%
 }
+\NewDocumentCommand{\yibinappendixsection}{m}{\section{#1}}
 
 % The current humanities sample keeps 绪论 unnumbered, whereas the science
 % hierarchy requires 绪论 to participate in chapter numbering.  The school
@@ -872,5 +981,17 @@
 \fi
 
 \setlist{nosep,leftmargin=2em}
+
+% Profile modules share logo and title primitives from this small package.
+\RequirePackage{yibinthesis-common}
+
+% Document-specific layouts live in separate modules so the core class keeps
+% options, metadata and shared thesis typography only.
+\ifyibin@proposal
+  \RequirePackage{yibinthesis-proposal}
+\fi
+\ifyibin@literaturereview
+  \RequirePackage{yibinthesis-literature-review}
+\fi
 
 \endinput

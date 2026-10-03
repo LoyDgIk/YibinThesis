@@ -26,6 +26,7 @@ TIMES = "Times New Roman"
 
 STYLE_BODY = "宜宾论文-正文"
 STYLE_FIRST_PARAGRAPH = "宜宾论文-首段"
+STYLE_LIST_BODY = "宜宾论文-列表正文"
 STYLE_HEADING_1 = "宜宾论文-一级标题"
 STYLE_HEADING_2 = "宜宾论文-二级标题"
 STYLE_HEADING_3 = "宜宾论文-三级标题"
@@ -34,7 +35,9 @@ STYLE_UNNUMBERED_HEADING = "宜宾论文-无编号标题"
 STYLE_FRONT_TITLE = "宜宾论文-中文页标题"
 STYLE_ENGLISH_ABSTRACT_TITLE = "宜宾论文-英文摘要标题"
 STYLE_TOC_TITLE = "宜宾论文-目录标题"
+STYLE_TABLE_OF_FIGURES = "Table of Figures"
 STYLE_APPENDIX_HEADING = "宜宾论文-附录标题"
+STYLE_APPENDIX_SECTION = "宜宾论文-附录二级标题"
 STYLE_CHINESE_ABSTRACT = "宜宾论文-中文摘要正文"
 STYLE_ENGLISH_ABSTRACT = "宜宾论文-英文摘要正文"
 STYLE_KEYWORDS = "宜宾论文-关键词"
@@ -53,6 +56,22 @@ STYLE_BIBLIOGRAPHY = "宜宾论文-参考文献"
 STYLE_NOTES = "宜宾论文-注释"
 STYLE_CITATION = "宜宾论文-文献上标"
 STYLE_THREE_LINE_TABLE = "宜宾论文-三线表"
+STYLE_PROPOSAL_TITLE = "宜宾开题-标题"
+STYLE_PROPOSAL_SUBTITLE = "宜宾开题-副标题"
+STYLE_PROPOSAL_LABEL = "宜宾开题-栏目"
+STYLE_PROPOSAL_BODY = "宜宾开题-正文"
+STYLE_PROPOSAL_PROMPT = "宜宾开题-提示"
+STYLE_PROPOSAL_UNNUMBERED_HEADING = "宜宾开题-无编号标题"
+STYLE_PROPOSAL_SIGNATURE = "宜宾开题-签名"
+STYLE_REVIEW_DOCUMENT_TITLE = "宜宾综述-文档标题"
+STYLE_REVIEW_THESIS_TITLE = "宜宾综述-论文题目"
+STYLE_REVIEW_INFO_LABEL = "宜宾综述-信息标签"
+STYLE_REVIEW_INFO_VALUE = "宜宾综述-信息值"
+STYLE_REVIEW_DATE = "宜宾综述-日期"
+STYLE_COVER_LAYOUT_TABLE = "YibinCoverLayout"
+STYLE_FRONT_LAYOUT_TABLE = "YibinFrontLayout"
+STYLE_PROPOSAL_FORM_TABLE = "YibinProposalForm"
+STYLE_REVIEW_INFO_TABLE = "YibinReviewInfoLayout"
 
 
 def _get_or_add_style(document: Document, name: str, style_type: WD_STYLE_TYPE):
@@ -394,6 +413,42 @@ def _configure_three_line_table_style(document: Document):
     return style
 
 
+def _configure_layout_table_style(
+    document: Document,
+    name: str,
+    *,
+    priority: int,
+    grid: bool,
+):
+    """Register reusable table roles used by deterministic layout geometry."""
+
+    style = _get_or_add_style(document, name, WD_STYLE_TYPE.TABLE)
+    _set_fonts(style, east_asia=SIMSUN, latin=TIMES, size=10.5, bold=False)
+    table_properties = style.element.find(qn("w:tblPr"))
+    if table_properties is None:
+        table_properties = OxmlElement("w:tblPr")
+        style.element.append(table_properties)
+    layout = table_properties.find(qn("w:tblLayout"))
+    if layout is None:
+        layout = OxmlElement("w:tblLayout")
+        table_properties.append(layout)
+    layout.set(qn("w:type"), "fixed")
+    borders = table_properties.find(qn("w:tblBorders"))
+    if borders is None:
+        borders = OxmlElement("w:tblBorders")
+        table_properties.append(borders)
+    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
+        node = borders.find(qn(f"w:{edge}"))
+        if node is None:
+            node = OxmlElement(f"w:{edge}")
+            borders.append(node)
+        node.set(qn("w:val"), "single" if grid else "nil")
+        node.set(qn("w:sz"), "4" if grid else "0")
+        node.set(qn("w:color"), "000000")
+    _set_quick_style(style, priority)
+    return style
+
+
 def build_reference_docx(output: Path) -> Path:
     document = Document()
     _set_doc_defaults(document)
@@ -432,45 +487,9 @@ def build_reference_docx(output: Path) -> Path:
         base="Normal",
     )
 
-    # The committed reference document defaults to the 2024 humanities
-    # profile.  Science-specific chapter alignment/pagination is applied by
-    # build_word.py during post-processing.
-    heading_specs = (
-        ("Heading 1", SIMHEI, 16, 12, 6, False, 0),
-        ("Heading 2", KAITI, 15, 9, 6, False, 1),
-        ("Heading 3", SIMSUN, 14, 6, 3, False, 2),
-        ("Heading 4", SIMSUN, 14, 6, 3, False, 3),
-    )
-    for name, font, size, before, after, page_break, outline in heading_specs:
-        _configure_paragraph_style(
-            document,
-            name,
-            east_asia=font,
-            size=size,
-            bold=True,
-            first_line=True,
-            before=before,
-            after=after,
-            keep_next=True,
-            keep_lines=True,
-            page_break_before=page_break,
-            outline_level=outline,
-        )
-        _configure_paragraph_style(
-            document,
-            name.replace("Heading", "Yibin Heading"),
-            east_asia=font,
-            size=size,
-            bold=True,
-            first_line=True,
-            before=before,
-            after=after,
-            keep_next=True,
-            keep_lines=True,
-            page_break_before=page_break,
-            base="Normal",
-            outline_level=outline,
-        )
+    # Keep Word's built-in Heading 1-4 styles untouched.  Thesis headings use
+    # the independent, reusable 宜宾论文-* styles registered below; Pandoc's
+    # built-in heading output is mapped to them during OOXML post-processing.
 
     _configure_paragraph_style(
         document,
@@ -592,13 +611,41 @@ def build_reference_docx(output: Path) -> Path:
         )
         _set_style_tab_stop(toc, position_twips=8777)
 
+    # Word uses one built-in Table of Figures style for both the figure and
+    # table directories produced by TOC \c fields. Match the first-level TOC
+    # contract so every generated directory entry is Song small-four.
+    caption_directory = _configure_paragraph_style(
+        document,
+        STYLE_TABLE_OF_FIGURES,
+        east_asia=SIMSUN,
+        latin=SIMSUN,
+        size=12,
+        line_spacing=1.5,
+        alignment=WD_ALIGN_PARAGRAPH.JUSTIFY,
+        base="Normal",
+    )
+    # ``add_style`` marks newly materialized latent styles as custom. Removing
+    # that flag lets Word bind the OOXML style to built-in id -36 instead of
+    # creating a second, default-formatted 图表目录 style when fields update.
+    caption_directory.element.attrib.pop(qn("w:customStyle"), None)
+    caption_directory.paragraph_format.first_line_indent = Pt(0)
+    caption_directory.paragraph_format.left_indent = Pt(0)
+    caption_directory.paragraph_format.right_indent = Pt(0)
+    caption_directory.paragraph_format.space_before = Pt(0)
+    caption_directory.paragraph_format.space_after = Pt(0)
+    _set_indent_xml(caption_directory)
+    _set_style_tab_stop(caption_directory, position_twips=8777)
+
     custom_paragraphs = (
         ("CoverLogo", SIMHEI, 12, False, WD_ALIGN_PARAGRAPH.CENTER, 1.0, 2.0, 0, False, False, None),
         ("CoverSchool", SIMHEI, 26, True, WD_ALIGN_PARAGRAPH.CENTER, 1.0, 0, 12, False, False, None),
         ("CoverThesisType", SIMHEI, 28, True, WD_ALIGN_PARAGRAPH.CENTER, 1.0, 24.35, 52.35, False, False, None),
+        ("CoverVersion", SIMHEI, 14, False, WD_ALIGN_PARAGRAPH.CENTER, 1.0, 0, 23, False, False, None),
         ("CoverTitle", SIMHEI, 18, True, WD_ALIGN_PARAGRAPH.CENTER, 2.0, 0, 47.3, False, False, None),
+        ("CoverTitleWithVersion", SIMHEI, 18, True, WD_ALIGN_PARAGRAPH.CENTER, 2.0, 0, 10, False, False, None),
         ("CoverField", SIMSUN, 16, True, WD_ALIGN_PARAGRAPH.JUSTIFY, 1.0, 0, 0, False, False, None),
         ("CoverValueLine", SIMSUN, 16, True, WD_ALIGN_PARAGRAPH.CENTER, 1.0, 0, 0, False, False, None),
+        ("CoverDate", SIMSUN, 15, True, WD_ALIGN_PARAGRAPH.CENTER, 1.0, 24, 0, False, False, None),
         ("Yibin Table Continuation", SIMSUN, 10.5, False, WD_ALIGN_PARAGRAPH.RIGHT, 1.0, 0, 0, True, True, None),
         ("DeclarationTitle", SIMHEI, 16, True, WD_ALIGN_PARAGRAPH.CENTER, 1.5, 0, 31.2, True, False, None),
         ("DeclarationBody", SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.LEFT, 2.0, 0, 0, False, False, None),
@@ -646,6 +693,7 @@ def build_reference_docx(output: Path) -> Path:
             outline_level=outline,
         )
     document.styles["CoverTitle"].font.underline = True
+    document.styles["CoverTitleWithVersion"].font.underline = True
     cover_value_line = document.styles["CoverValueLine"]
     cover_value_line.base_style = document.styles["Normal"]
     cover_value_line.paragraph_format.line_spacing = Pt(20)
@@ -738,7 +786,8 @@ def build_reference_docx(output: Path) -> Path:
     visible_paragraph_styles = (
         (STYLE_BODY, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, True, 1.5, 0, 0, False, False, 0, None),
         (STYLE_FIRST_PARAGRAPH, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, True, 1.5, 0, 0, False, False, 1, None),
-        (STYLE_HEADING_1, SIMHEI, 16, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 12, 6, True, False, 2, 0),
+        (STYLE_LIST_BODY, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, False, 1.5, 0, 0, False, False, 11, None),
+        (STYLE_HEADING_1, SIMHEI, 16, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 12, 6, True, True, 2, 0),
         (STYLE_HEADING_2, KAITI, 15, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 9, 6, True, False, 3, 1),
         (STYLE_HEADING_3, SIMSUN, 14, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 6, 3, True, False, 4, 2),
         (STYLE_HEADING_4, SIMSUN, 14, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 6, 3, True, False, 5, 3),
@@ -747,6 +796,7 @@ def build_reference_docx(output: Path) -> Path:
         (STYLE_ENGLISH_ABSTRACT_TITLE, TIMES, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.5, 0, 12, True, True, 8, 0),
         (STYLE_TOC_TITLE, SIMHEI, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 0, True, False, 9, None),
         (STYLE_APPENDIX_HEADING, SIMHEI, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.5, 0, 12, True, True, 10, 0),
+        (STYLE_APPENDIX_SECTION, KAITI, 15, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 9, 6, True, False, 62, 1),
         (STYLE_CHINESE_ABSTRACT, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, True, 1.5, 0, 0, False, False, 12, None),
         (STYLE_ENGLISH_ABSTRACT, TIMES, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, False, 1.5, 0, 0, False, False, 13, None),
         (STYLE_KEYWORDS, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.LEFT, False, 1.5, 6, 0, False, False, 14, None),
@@ -763,9 +813,22 @@ def build_reference_docx(output: Path) -> Path:
         (STYLE_TABLE_HEADER_RIGHT, SIMSUN, 10.5, False, WD_ALIGN_PARAGRAPH.RIGHT, False, 1.0, 0, 0, True, False, 28, None),
         (STYLE_BIBLIOGRAPHY, SIMSUN, 10.5, False, WD_ALIGN_PARAGRAPH.JUSTIFY, False, 1.5, 0, 0, False, False, 29, None),
         (STYLE_NOTES, SIMSUN, 10.5, False, WD_ALIGN_PARAGRAPH.JUSTIFY, False, 1.5, 0, 0, False, False, 30, None),
+        (STYLE_PROPOSAL_TITLE, KAITI, 18, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 6, True, False, 50, None),
+        (STYLE_PROPOSAL_SUBTITLE, SIMSUN, 12, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 6, True, False, 51, None),
+        (STYLE_PROPOSAL_LABEL, SIMHEI, 12, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 0, False, False, 52, None),
+        (STYLE_PROPOSAL_BODY, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, True, 1.5, 0, 0, False, False, 53, None),
+        (STYLE_PROPOSAL_PROMPT, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.LEFT, False, 1.5, 0, 0, True, False, 54, None),
+        (STYLE_PROPOSAL_UNNUMBERED_HEADING, KAITI, 15, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 9, 6, True, False, 55, None),
+        (STYLE_PROPOSAL_SIGNATURE, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.RIGHT, False, 1.5, 0, 0, True, False, 56, None),
+        (STYLE_REVIEW_DOCUMENT_TITLE, SIMHEI, 28, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 42, 72, True, False, 57, None),
+        (STYLE_REVIEW_THESIS_TITLE, SIMHEI, 18, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.5, 0, 78, True, False, 58, None),
+        (STYLE_REVIEW_INFO_LABEL, SIMHEI, 18, True, WD_ALIGN_PARAGRAPH.LEFT, False, 1.0, 0, 0, True, False, 59, None),
+        (STYLE_REVIEW_INFO_VALUE, SIMSUN, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 0, True, False, 60, None),
+        (STYLE_REVIEW_DATE, SIMSUN, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 0, True, False, 61, None),
     )
     quick_paragraph_styles = {
         STYLE_BODY,
+        STYLE_LIST_BODY,
         STYLE_HEADING_1,
         STYLE_HEADING_2,
         STYLE_HEADING_3,
@@ -775,6 +838,7 @@ def build_reference_docx(output: Path) -> Path:
         STYLE_ENGLISH_ABSTRACT_TITLE,
         STYLE_TOC_TITLE,
         STYLE_APPENDIX_HEADING,
+        STYLE_APPENDIX_SECTION,
         STYLE_CHINESE_ABSTRACT,
         STYLE_ENGLISH_ABSTRACT,
         STYLE_KEYWORDS,
@@ -791,6 +855,18 @@ def build_reference_docx(output: Path) -> Path:
         STYLE_TABLE_HEADER_RIGHT,
         STYLE_BIBLIOGRAPHY,
         STYLE_NOTES,
+        STYLE_PROPOSAL_TITLE,
+        STYLE_PROPOSAL_SUBTITLE,
+        STYLE_PROPOSAL_LABEL,
+        STYLE_PROPOSAL_BODY,
+        STYLE_PROPOSAL_PROMPT,
+        STYLE_PROPOSAL_UNNUMBERED_HEADING,
+        STYLE_PROPOSAL_SIGNATURE,
+        STYLE_REVIEW_DOCUMENT_TITLE,
+        STYLE_REVIEW_THESIS_TITLE,
+        STYLE_REVIEW_INFO_LABEL,
+        STYLE_REVIEW_INFO_VALUE,
+        STYLE_REVIEW_DATE,
     }
     for (
         name,
@@ -841,6 +917,7 @@ def build_reference_docx(output: Path) -> Path:
     bibliography_visible.paragraph_format.first_line_indent = Cm(-0.74)
     table_continuation_visible = document.styles[STYLE_TABLE_CONTINUATION]
     table_continuation_visible.base_style = document.styles["Caption"]
+    _set_style_bottom_border(document.styles[STYLE_REVIEW_INFO_VALUE])
 
     citation_style = _configure_character_style(
         document,
@@ -853,11 +930,39 @@ def build_reference_docx(output: Path) -> Path:
     )
     citation_style.base_style = document.styles["Default Paragraph Font"]
     _configure_three_line_table_style(document)
+    _configure_layout_table_style(
+        document,
+        STYLE_COVER_LAYOUT_TABLE,
+        priority=61,
+        grid=False,
+    )
 
-    # Word-generated TOC and Caption paragraphs keep their built-in semantic
+    _configure_layout_table_style(
+        document,
+        STYLE_FRONT_LAYOUT_TABLE,
+        priority=62,
+        grid=False,
+    )
+    _configure_layout_table_style(
+        document,
+        STYLE_PROPOSAL_FORM_TABLE,
+        priority=63,
+        grid=True,
+    )
+    _configure_layout_table_style(
+        document,
+        STYLE_REVIEW_INFO_TABLE,
+        priority=64,
+        grid=False,
+    )
+
+    # Word-generated directory and Caption paragraphs keep their semantic
     # style IDs.  Expose those styles in the gallery so users can modify the
-    # official 0/21/42 pt TOC hierarchy and standard Caption base directly.
-    for priority, style_name in enumerate(("Caption", "TOC 1", "TOC 2", "TOC 3"), start=40):
+    # official directory hierarchy and standard Caption base directly.
+    for priority, style_name in enumerate(
+        ("Caption", "TOC 1", "TOC 2", "TOC 3", STYLE_TABLE_OF_FIGURES),
+        start=40,
+    ):
         _set_quick_style(document.styles[style_name], priority)
 
     for style_name in (
@@ -869,15 +974,25 @@ def build_reference_docx(output: Path) -> Path:
         STYLE_FRONT_TITLE,
         STYLE_ENGLISH_ABSTRACT_TITLE,
         STYLE_APPENDIX_HEADING,
+        STYLE_APPENDIX_SECTION,
         STYLE_EQUATION,
+        STYLE_PROPOSAL_TITLE,
+        STYLE_PROPOSAL_SUBTITLE,
+        STYLE_PROPOSAL_UNNUMBERED_HEADING,
+        STYLE_REVIEW_DOCUMENT_TITLE,
+        STYLE_REVIEW_THESIS_TITLE,
     ):
         document.styles[style_name].next_paragraph_style = document.styles[STYLE_BODY]
     document.styles[STYLE_BODY].next_paragraph_style = document.styles[STYLE_BODY]
     document.styles[STYLE_FIRST_PARAGRAPH].next_paragraph_style = document.styles[STYLE_BODY]
+    document.styles[STYLE_LIST_BODY].next_paragraph_style = document.styles[STYLE_LIST_BODY]
     document.styles[STYLE_FIGURE_CAPTION].next_paragraph_style = document.styles[STYLE_BODY]
     document.styles[STYLE_FIGURE].next_paragraph_style = document.styles[STYLE_FIGURE_CAPTION]
     document.styles[STYLE_TABLE_CAPTION].next_paragraph_style = document.styles[STYLE_TABLE_TEXT]
     document.styles[STYLE_TABLE_CONTINUATION].next_paragraph_style = document.styles[STYLE_TABLE_HEADER]
+    document.styles[STYLE_PROPOSAL_BODY].next_paragraph_style = document.styles[STYLE_PROPOSAL_BODY]
+    document.styles[STYLE_PROPOSAL_PROMPT].next_paragraph_style = document.styles[STYLE_PROPOSAL_BODY]
+    document.styles[STYLE_PROPOSAL_UNNUMBERED_HEADING].next_paragraph_style = document.styles[STYLE_PROPOSAL_BODY]
 
     marker = document.styles["YibinSectionMarker"]
     marker.font.hidden = True

@@ -1,26 +1,16 @@
-.PHONY: all pdf word check clean distclean
+.PHONY: cli check-examples exe
 
-MAIN ?= main.tex
-PDF_OUT ?= build/pdf
-WORD_OUT ?= build/word/main.docx
-PYTHON ?= python3
-PANDOC ?= pandoc
+PYTHON ?= python
 
-all: pdf word
-
-pdf:
-	latexmk -xelatex -outdir=$(PDF_OUT) $(MAIN)
-
-word:
-	$(PYTHON) tools/build_word.py --main $(MAIN) --output $(WORD_OUT) --pandoc $(PANDOC)
+cli:
+	$(PYTHON) -c "import sys; sys.path.insert(0, 'lib'); from yibinthesis_cli.app import main; raise SystemExit(main(['--help']))"
 
 check:
-	$(PYTHON) tests/audit_format.py
-	$(MAKE) pdf MAIN=tests/smoke.tex PDF_OUT=build/pdf/tests
-	$(MAKE) pdf MAIN=tests/smoke-science.tex PDF_OUT=build/pdf/tests
+	$(PYTHON) -m unittest discover -s lib/tests -p 'test_*.py' -v
+	$(PYTHON) lib/audit_format.py
 
-clean:
-	latexmk -c -outdir=$(PDF_OUT) $(MAIN)
+check-examples:
+	$(PYTHON) lib/audit_format.py
 
-distclean:
-	latexmk -C -outdir=$(PDF_OUT) $(MAIN)
+exe:
+	powershell -NoProfile -ExecutionPolicy Bypass -File .\build_exe.ps1

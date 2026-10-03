@@ -1,0 +1,61 @@
+% !TeX program = xelatex
+\documentclass[proposal,humanities]{yibinthesis}
+
+\input{examples/proposal/metadata}
+\addbibresource{examples/proposal/references.bib}
+
+\begin{document}
+
+\makeyibinproposal
+
+\yibinproposalfield{significance}{
+公共服务数据来源多样、更新频繁，研究统一的数据治理方法有助于提高数据质量、
+增强跨部门协作能力，并为后续分析提供可追溯的数据基础。
+}
+
+\yibinproposalfield{research-status}{
+国内研究主要关注数据标准、质量评价与共享机制；国外研究较早讨论数据治理职责、
+元数据管理和全生命周期控制。现有研究为本课题提供了方法基础，但面向具体公共服务
+流程的可执行治理规则仍需进一步细化\yibincite{zhang2024,wang2023}。
+}
+
+\yibinproposalfield{research-content}{
+研究内容包括数据来源梳理、字段规范设计、质量规则定义、过程记录与结果评价。
+
+\begin{center}
+\begin{tabular}{cl}
+\toprule
+序号 & 研究任务 \\
+\midrule
+1 & 建立数据来源清单 \\
+2 & 设计字段与质量规则 \\
+3 & 验证治理流程的可执行性 \\
+\bottomrule
+\end{tabular}
+\end{center}
+}
+
+\yibinproposalfield{research-approach}{
+采用文献研究、流程分析和案例验证相结合的方法。先梳理公开资料，再建立字段字典和
+质量检查规则，最后通过小规模案例检查规则的一致性与可追溯性。
+
+\yibinproposalfigure[0.48\linewidth]
+  {examples/full-featured/assets/document-pipeline.png}
+  {研究技术路线示意图}
+  {fig:proposal-pipeline}
+
+图\ref{fig:proposal-pipeline}展示了资料、规则与输出之间的关系。
+}
+
+\yibinproposalfield{schedule}{
+2026年7月完成资料收集与方案设计；2026年8月完成数据整理与规则实现；
+2026年9月完成案例验证和报告修改。
+}
+
+\yibinproposalfield{references}{
+\printyibinproposalbibliography
+}
+
+\yibinproposalfield{advisor-opinion}{}
+
+\end{document}

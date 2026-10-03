@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "yibinthesis"
+version = "0.3.0"
+description = "宜宾学院本科毕业论文 LaTeX 模板命令行工具"
+requires-python = ">=3.11"
+authors = [{ name = "YibinThesis contributors" }]
+
+[project.optional-dependencies]
+exe = ["pyinstaller>=6.0"]
+
+[project.scripts]
+yibinthesis = "yibinthesis_cli.app:main"
+
+[tool.setuptools]
+package-dir = {"" = "lib"}
+packages = ["yibinthesis_cli"]

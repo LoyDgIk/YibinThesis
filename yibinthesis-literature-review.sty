@@ -1,0 +1,53 @@
+% !TeX root = main.tex
+\NeedsTeXFormat{LaTeX2e}[2020-10-01]
+\ProvidesPackage{yibinthesis-literature-review}
+  [2026/07/18 v0.1 Yibin University literature-review module]
+
+\makeatletter
+
+\NewDocumentCommand{\makeyibinliteraturereviewcover}{}{%
+  \ifyibin@literaturereview\else
+    \ClassError{yibinthesis}
+      {\string\makeyibinliteraturereviewcover requires the literature-review class option}
+      {Use \string\documentclass[literature-review,humanities]{yibinthesis}.}%
+  \fi
+  \clearpage
+  \thispagestyle{empty}
+  \begingroup
+    \setlength{\parindent}{0pt}%
+    \yibinprofilelogo{1.4cm}
+    \begin{textblock*}{15cm}(3cm,3.0cm)
+      \centering\yibinhei\bfseries\fontsize{28bp}{34bp}\selectfont
+      \ifyibin@science 本科生毕业论文（设计）文献综述\else 本科生毕业论文文献综述\fi
+    \end{textblock*}
+    \begin{textblock*}{15cm}(3cm,7.1cm)
+      \centering\yibinhei\bfseries\fontsize{18bp}{26bp}\selectfont
+      \parbox{14cm}{\centering\yibintitle}
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,12.5cm)
+      \yibin@coverfield{学院（部）}{3.5cm}{11.6cm}{\yibincollege}
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,14.1cm)
+      \yibin@coverfield{专\hspace{2em}业}{3.5cm}{11.6cm}{\yibinmajor}
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,15.7cm)
+      \yibin@coverfield{学生姓名}{3.2cm}{11.9cm}{\yibinauthor}
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,17.3cm)
+      \yibin@coverdualfield{学\hspace{2em}号}{3.2cm}{5.6cm}{\yibinstudentid}%
+        {年级}{1.6cm}{4.5cm}{\yibingradeclass}
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,18.9cm)
+      \yibin@coverdualfield{指导教师}{3.2cm}{5.6cm}{\yibinadvisor}%
+        {职称}{1.6cm}{4.5cm}{\yibinadvisortitle}
+    \end{textblock*}
+    \begin{textblock*}{15cm}(3cm,22.2cm)
+      \centering\yibinsong\fontsize{14bp}{20bp}\selectfont \yibindate
+    \end{textblock*}
+    \null
+  \endgroup
+  \mainmatter
+}
+
+\makeatother
+\endinput

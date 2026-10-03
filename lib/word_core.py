@@ -50,17 +50,37 @@ SECTION_COVER_END = "YIBIN_INTERNAL_SECTION_COVER_END_5B8D"
 SECTION_ABSTRACT_END = "YIBIN_INTERNAL_SECTION_ABSTRACT_END_6458"
 SECTION_FRONT_END = "YIBIN_INTERNAL_SECTION_FRONT_END_8F91"
 TOC_MARKER = "YIBIN_INTERNAL_TOC_76EE"
+LOF_MARKER = "YIBIN_INTERNAL_LOF_56FE"
+LOT_MARKER = "YIBIN_INTERNAL_LOT_8868"
+SECTION_REVIEW_COVER_END = "YIBIN_INTERNAL_SECTION_REVIEW_COVER_END_A2C4"
+SECTION_REVIEW_REFERENCES = "YIBIN_INTERNAL_SECTION_REVIEW_REFERENCES_7B19"
+SECTION_REVIEW_TAIL = "YIBIN_INTERNAL_SECTION_REVIEW_TAIL_91E2"
+PROPOSAL_FIELD_MARKER_PREFIX = "YIBIN_INTERNAL_PROPOSAL_FIELD_"
 STYLE_BODY = "宜宾论文-正文"
 STYLE_FIRST_PARAGRAPH = "宜宾论文-首段"
+STYLE_LIST_BODY = "宜宾论文-列表正文"
 STYLE_HEADING_1 = "宜宾论文-一级标题"
 STYLE_HEADING_2 = "宜宾论文-二级标题"
 STYLE_HEADING_3 = "宜宾论文-三级标题"
 STYLE_HEADING_4 = "宜宾论文-四级标题"
+BUILTIN_HEADING_STYLES = (
+    "Heading 1",
+    "Heading 2",
+    "Heading 3",
+    "Heading 4",
+)
+BUILTIN_HEADING_STYLE_IDS = (
+    "Heading1",
+    "Heading2",
+    "Heading3",
+    "Heading4",
+)
 STYLE_UNNUMBERED_HEADING = "宜宾论文-无编号标题"
 STYLE_FRONT_TITLE = "宜宾论文-中文页标题"
 STYLE_ENGLISH_ABSTRACT_TITLE = "宜宾论文-英文摘要标题"
 STYLE_TOC_TITLE = "宜宾论文-目录标题"
 STYLE_APPENDIX_HEADING = "宜宾论文-附录标题"
+STYLE_APPENDIX_SECTION = "宜宾论文-附录二级标题"
 STYLE_CHINESE_ABSTRACT = "宜宾论文-中文摘要正文"
 STYLE_ENGLISH_ABSTRACT = "宜宾论文-英文摘要正文"
 STYLE_KEYWORDS = "宜宾论文-关键词"
@@ -79,6 +99,20 @@ STYLE_BIBLIOGRAPHY = "宜宾论文-参考文献"
 STYLE_NOTES = "宜宾论文-注释"
 STYLE_CITATION = "宜宾论文-文献上标"
 STYLE_THREE_LINE_TABLE = "宜宾论文-三线表"
+STYLE_PROPOSAL_TITLE = "宜宾开题-标题"
+STYLE_PROPOSAL_SUBTITLE = "宜宾开题-副标题"
+STYLE_PROPOSAL_LABEL = "宜宾开题-栏目"
+STYLE_PROPOSAL_BODY = "宜宾开题-正文"
+STYLE_PROPOSAL_PROMPT = "宜宾开题-提示"
+STYLE_PROPOSAL_UNNUMBERED_HEADING = "宜宾开题-无编号标题"
+STYLE_PROPOSAL_SIGNATURE = "宜宾开题-签名"
+STYLE_REVIEW_DOCUMENT_TITLE = "宜宾综述-文档标题"
+STYLE_REVIEW_THESIS_TITLE = "宜宾综述-论文题目"
+STYLE_REVIEW_INFO_LABEL = "宜宾综述-信息标签"
+STYLE_REVIEW_INFO_VALUE = "宜宾综述-信息值"
+STYLE_REVIEW_DATE = "宜宾综述-日期"
+STYLE_PROPOSAL_FORM_TABLE = "YibinProposalForm"
+STYLE_REVIEW_INFO_TABLE = "YibinReviewInfoLayout"
 FIGURE_FILTER = (
     Path(__file__).resolve().parents[1]
     / "word"
@@ -108,6 +142,13 @@ class MainEvent:
     phase: str
     kind: str
     value: str | None = None
+
+
+@dataclass(frozen=True)
+class DocumentProfile:
+    document_type: str
+    discipline: str
+    template_year: str
 
 
 @dataclass
@@ -242,6 +283,17 @@ class CitationRegistry:
                 self.order.append(key)
         return token
 
+    def add_nocite(self, keys: str) -> str:
+        parsed = [item.strip() for item in split_top_level(keys) if item.strip()]
+        if not parsed:
+            raise BuildError("检测到空的 \\nocite 文献键。")
+        if "*" in parsed:
+            raise BuildError("Word 转换暂不支持 \\nocite{*}；请显式列出文献键。")
+        for key in parsed:
+            if key not in self.order:
+                self.order.append(key)
+        return ""
+
 
 def strip_tex_comments(text: str) -> str:
     """Remove unescaped LaTeX comments while retaining line structure."""
@@ -310,6 +362,106 @@ def replace_braced_command(
         cursor = end
     parts.append(text[cursor:])
     return "".join(parts)
+
+
+PROPOSAL_FIELD_ORDER = (
+    "significance",
+    "research-status",
+    "research-content",
+    "research-approach",
+    "schedule",
+    "references",
+    "advisor-opinion",
+)
+
+
+def extract_proposal_fields(text: str) -> list[tuple[str, str]]:
+    r"""Extract balanced ``\yibinproposalfield{key}{content}`` calls."""
+
+    source = strip_tex_comments(text)
+    pattern = re.compile(r"\\yibinproposalfield\s*\{")
+    cursor = 0
+    fields: list[tuple[str, str]] = []
+    while match := pattern.search(source, cursor):
+        key_open = source.find("{", match.start())
+        key, key_end = extract_balanced(source, key_open)
+        content_open = key_end
+        while content_open < len(source) and source[content_open].isspace():
+            content_open += 1
+        if content_open >= len(source) or source[content_open] != "{":
+            raise BuildError(f"开题报告字段 {key.strip()} 缺少内容参数。")
+        content, cursor = extract_balanced(source, content_open)
+        fields.append((key.strip(), content.strip()))
+
+    keys = [key for key, _ in fields]
+    duplicates = sorted({key for key in keys if keys.count(key) > 1})
+    if duplicates:
+        raise BuildError("开题报告字段重复：" + "、".join(duplicates))
+    unknown = sorted(set(keys) - set(PROPOSAL_FIELD_ORDER))
+    if unknown:
+        raise BuildError("未知开题报告字段：" + "、".join(unknown))
+    missing = [key for key in PROPOSAL_FIELD_ORDER if key not in keys]
+    if missing:
+        raise BuildError("开题报告字段缺失：" + "、".join(missing))
+    if tuple(keys) != PROPOSAL_FIELD_ORDER:
+        raise BuildError("开题报告字段顺序必须为：" + "、".join(PROPOSAL_FIELD_ORDER))
+    return fields
+
+
+def _replace_proposal_figure_commands(text: str) -> str:
+    pattern = re.compile(r"\\yibinproposalfigure")
+    cursor = 0
+    parts: list[str] = []
+    while match := pattern.search(text, cursor):
+        position = match.end()
+        while position < len(text) and text[position].isspace():
+            position += 1
+        width = r"0.82\linewidth"
+        if position < len(text) and text[position] == "[":
+            close = text.find("]", position + 1)
+            if close < 0:
+                raise BuildError("开题报告图片宽度参数未闭合。")
+            width = text[position + 1 : close].strip() or width
+            position = close + 1
+        arguments: list[str] = []
+        for label in ("路径", "题名", "标签"):
+            while position < len(text) and text[position].isspace():
+                position += 1
+            if position >= len(text) or text[position] != "{":
+                raise BuildError(f"开题报告图片缺少{label}参数。")
+            value, position = extract_balanced(text, position)
+            arguments.append(value.strip())
+        path, caption, label = arguments
+        parts.append(text[cursor : match.start()])
+        parts.append(
+            "\\begin{figure}\n\\centering\n"
+            f"\\includegraphics[width={width}]{{{path}}}\n"
+            f"\\caption{{{caption}}}\n\\label{{{label}}}\n"
+            "\\end{figure}"
+        )
+        cursor = position
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
+def normalize_proposal_latex(text: str) -> str:
+    text = _replace_proposal_figure_commands(text)
+    table_pattern = re.compile(
+        r"\\begin\s*\{yibinproposaltable\}\s*\{(?P<title>[^{}]*)\}\s*"
+        r"\{(?P<label>[^{}]*)\}(?P<body>.*?)"
+        r"\\end\s*\{yibinproposaltable\}",
+        flags=re.DOTALL,
+    )
+
+    def replace_table(match: re.Match[str]) -> str:
+        return (
+            "\\begin{table}\n\\centering\n"
+            f"\\caption{{{match.group('title').strip()}}}\n"
+            f"\\label{{{match.group('label').strip()}}}\n"
+            f"{match.group('body').strip()}\n\\end{{table}}"
+        )
+
+    return table_pattern.sub(replace_table, text)
 
 
 def split_top_level(value: str, delimiter: str = ",") -> list[str]:
@@ -392,8 +544,11 @@ def parse_main_events(main_text: str) -> list[MainEvent]:
     text = strip_tex_comments(main_text)
     pattern = re.compile(
         r"\\(?P<kind>frontmatter|mainmatter|backmatter|"
-        r"makeyibincover|makeyibindeclarations|tableofcontents|"
-        r"printyibinnotes|printyibinbibliography|input|include)"
+        r"makeyibincover|makeyibindeclarations|makeyibinproposal|"
+        r"makeyibinliteraturereviewcover|tableofcontents|"
+        r"listoffigures|listoftables|"
+        r"printyibinnotes|printyibinbibliography|nocite|"
+        r"printyibinproposalbibliography|input|include)"
         r"(?:\s*\{(?P<value>[^{}]+)\})?"
     )
     phase = "pre"
@@ -424,6 +579,38 @@ def parse_discipline(main_text: str) -> str:
         return "humanities"
     options = {item.strip().lower() for item in (match.group("options") or "").split(",")}
     return "science" if "science" in options else "humanities"
+
+
+def parse_document_type(main_text: str) -> str:
+    match = re.search(
+        r"\\documentclass(?:\[(?P<options>[^]]*)\])?\s*\{yibinthesis\}",
+        strip_tex_comments(main_text),
+    )
+    if not match:
+        return "thesis"
+    options = {
+        item.strip().lower() for item in (match.group("options") or "").split(",")
+    }
+    selected = options & {"thesis", "proposal", "literature-review"}
+    if len(selected) > 1:
+        raise BuildError("文档类型类选项互斥：" + "、".join(sorted(selected)))
+    return next(iter(selected), "thesis")
+
+
+def resolve_profile(main_text: str, metadata: dict[str, str]) -> DocumentProfile:
+    document_type = parse_document_type(main_text)
+    expected_year = "2022" if document_type == "proposal" else "2024"
+    template_year = metadata.get("template-year", "").strip() or expected_year
+    if template_year != expected_year:
+        raise BuildError(
+            f"文档类型 {document_type} 仅支持 template-year={expected_year}，"
+            f"收到 template-year={template_year}。"
+        )
+    return DocumentProfile(
+        document_type=document_type,
+        discipline=parse_discipline(main_text),
+        template_year=template_year,
+    )
 
 
 def path_is_within(path: Path, root: Path) -> bool:
@@ -857,6 +1044,16 @@ def normalize_latex_table_preambles(text: str) -> str:
             ],
             preamble.specification,
         )
+        # Pandoc retains the ``X`` column shell but can discard its cell
+        # contents when the column is preceded by an array declaration such
+        # as ``>{\centering\arraybackslash}``. The original alignment has
+        # already been recorded for the DOCX layout pass, so remove only this
+        # Pandoc-incompatible prefix from the conversion copy.
+        specification = re.sub(
+            r">\s*\{[^{}]*\}\s*(?=X)",
+            "",
+            specification,
+        )
         if specification != preamble.specification:
             replacements.append(
                 (
@@ -871,12 +1068,14 @@ def normalize_latex_table_preambles(text: str) -> str:
 
 
 def normalize_longtable_headers(text: str) -> str:
-    """Remove repeated-page header definitions before Pandoc reads longtable.
+    """Remove page-only header and footer definitions before Pandoc reads longtable.
 
     Pandoc already turns the first longtable header into a Markdown table
     header.  Keeping the block between ``\\endfirsthead`` and ``\\endhead``
-    adds a second header plus a blank row, which makes the later Markdown to
-    DOCX pass treat the whole table as plain text.
+    adds a second header plus a blank row.  Likewise, rows declared before
+    ``\\endfoot`` (for example ``续下页``) are page furniture in LaTeX but
+    become ordinary Word data rows unless the entire page-definition block is
+    removed before conversion.
     """
 
     replacements: list[tuple[int, int, str]] = []
@@ -892,13 +1091,22 @@ def normalize_longtable_headers(text: str) -> str:
         end_start = preamble.specification_end + 1 + end_match.start()
         end = preamble.specification_end + 1 + end_match.end()
         body = text[preamble.specification_end + 1 : end_start]
-        body = re.sub(
-            r"\\endfirsthead\b.*?\\endhead\b",
-            "\n",
-            body,
-            flags=re.DOTALL,
-        )
-        body = re.sub(r"\\end(?:firsthead|head)\b", "", body)
+        first_header_end = re.search(r"\\endfirsthead\b", body)
+        if first_header_end is not None:
+            page_definitions = body[first_header_end.end() :]
+            last_footer_end = re.search(r"\\endlastfoot\b", page_definitions)
+            ordinary_footer_end = re.search(r"\\endfoot\b", page_definitions)
+            repeated_header_end = re.search(r"\\endhead\b", page_definitions)
+            definition_end = (
+                last_footer_end or ordinary_footer_end or repeated_header_end
+            )
+            if definition_end is not None:
+                body = (
+                    body[: first_header_end.start()]
+                    + "\n"
+                    + page_definitions[definition_end.end() :]
+                )
+        body = re.sub(r"\\end(?:firsthead|head|foot|lastfoot)\b", "", body)
         columns = parse_latex_table_columns(preamble.specification)
         simplified_spec = "".join(
             {"left": "l", "center": "c", "right": "r"}[column.horizontal]
@@ -918,6 +1126,52 @@ def normalize_longtable_headers(text: str) -> str:
     for start, end, replacement in reversed(replacements):
         text = text[:start] + replacement + text[end:]
     return text
+
+
+def unwrap_table_resizeboxes(text: str) -> str:
+    """Remove ``\\resizebox`` wrappers whose body is a LaTeX table.
+
+    Pandoc does not convert a ``tabular`` environment when it remains nested
+    inside the graphics-oriented ``\\resizebox`` command.  PDF output may be
+    correct while the corresponding Word table, caption label, and cross-
+    references disappear.  Keep non-table resize boxes untouched and unwrap
+    only bodies that contain a supported table environment.
+    """
+
+    pattern = re.compile(r"\\resizebox\*?\s*\{")
+    cursor = 0
+    parts: list[str] = []
+    while match := pattern.search(text, cursor):
+        width_open = text.find("{", match.start())
+        _, width_end = extract_balanced(text, width_open)
+
+        height_open = width_end
+        while height_open < len(text) and text[height_open].isspace():
+            height_open += 1
+        if height_open >= len(text) or text[height_open] != "{":
+            cursor = match.end()
+            continue
+        _, height_end = extract_balanced(text, height_open)
+
+        body_open = height_end
+        while body_open < len(text) and text[body_open].isspace():
+            body_open += 1
+        if body_open >= len(text) or text[body_open] != "{":
+            cursor = match.end()
+            continue
+        body, body_end = extract_balanced(text, body_open)
+
+        parts.append(text[cursor : match.start()])
+        if re.search(
+            r"\\begin\s*\{(?:longtable|tabularx|tabular\*|tabular)\}",
+            body,
+        ):
+            parts.append(body)
+        else:
+            parts.append(text[match.start() : body_end])
+        cursor = body_end
+    parts.append(text[cursor:])
+    return "".join(parts)
 
 
 def resolve_word_image_target(target: str, resource_roots: Iterable[Path]) -> str:
@@ -952,6 +1206,7 @@ def normalize_latex(
     table_layouts: list[LatexTableLayout] | None = None,
 ) -> str:
     text = strip_tex_comments(text)
+    text = unwrap_table_resizeboxes(text)
     if table_layouts is not None:
         table_layouts.extend(extract_latex_table_layouts(text))
     text = normalize_longtable_headers(text)
@@ -1001,12 +1256,43 @@ def normalize_latex(
         return rf"\chapter*{{附录{marker} {title}}}"
 
     text = replace_braced_command(text, "yibinappendix", appendix_heading)
+
+    appendix_marker: str | None = None
+
+    def appendix_section_heading(match: re.Match[str]) -> str:
+        nonlocal appendix_marker
+        if match.group("marker") is not None:
+            appendix_marker = match.group("marker")
+            return match.group(0)
+        if appendix_marker is None:
+            raise BuildError("\\yibinappendixsection 必须写在 \\yibinappendix 之后。")
+        title = match.group("title")
+        return rf"\section*{{{title}}}"
+
+    text = re.sub(
+        r"\\chapter\*\{附录(?P<marker>[A-Z]|\d+)\s+[^{}]*\}"
+        r"|\\yibinappendixsection\s*\{(?P<title>[^{}]*)\}",
+        appendix_section_heading,
+        text,
+    )
+
+    def register_appendix_label(match: re.Match[str]) -> str:
+        labels.register(match.group("label"), match.group("marker"), "附录")
+        return match.group("heading")
+
+    text = re.sub(
+        r"(?P<heading>\\chapter\*\{附录(?P<marker>[A-Z]|\d+)\s+[^{}]*\})"
+        r"\s*\\label\s*\{(?P<label>[^{}]+)\}",
+        register_appendix_label,
+        text,
+    )
     text = replace_braced_command(
         text,
         "yibincite",
         citations.placeholder,
     )
     text = replace_braced_command(text, "cite", citations.placeholder)
+    text = replace_braced_command(text, "nocite", citations.add_nocite)
     text = replace_braced_command(text, "yibinnote", notes.add)
     # Pandoc resolves each standalone LaTeX fragment with a fresh counter, so
     # its native \ref text is stale for cross-file targets.  Preserve the
@@ -1208,10 +1494,42 @@ def apply_heading_numbering(
             labels.register(identifier.group(1), reference_number, "标题")
         if level == 1:
             output.append(f"<!-- YIBIN_INTERNAL_CHAPTER_{counters.chapter} -->")
-        # Numbering is attached to Word's built-in Heading 1-4 styles during
+        # Numbering is attached to the reusable Yibin heading styles during
         # OOXML post-processing.  Keep the paragraph text itself unnumbered so
         # Word users can renumber, reorder, and cross-reference headings.
         output.append(f"{'#' * level} {title}{attribute_text}")
+    return "\n".join(output)
+
+
+def demote_proposal_headings(markdown: str) -> str:
+    """Map standalone Pandoc section levels back to the book-class hierarchy."""
+
+    heading = re.compile(r"^(?P<marks>#{1,3})\s+(?P<body>.+?)\s*$")
+    attributes = re.compile(r"^(?P<title>.*?)(?:\s+\{(?P<attrs>[^{}]*)\})?$")
+    output: list[str] = []
+    for line in markdown.splitlines():
+        match = heading.match(line)
+        if not match:
+            output.append(line)
+            continue
+        parsed = attributes.match(match.group("body"))
+        assert parsed is not None
+        attrs = parsed.group("attrs") or ""
+        if ".unnumbered" in attrs.split() or re.search(r"(?:^|\s)-(?:\s|$)", attrs):
+            if output and output[-1].strip():
+                output.append("")
+            output.extend(
+                custom_block(
+                    STYLE_PROPOSAL_UNNUMBERED_HEADING,
+                    parsed.group("title").strip(),
+                ).splitlines()
+            )
+            output.append("")
+            continue
+        if output and output[-1].strip():
+            output.append("")
+        output.append("#" * (len(match.group("marks")) + 1) + " " + match.group("body"))
+        output.append("")
     return "\n".join(output)
 
 
@@ -1235,6 +1553,7 @@ def apply_float_numbering(
     def markdown_identifier(attributes: str | None) -> str | None:
         if not attributes:
             return None
+        attributes = attributes.strip().strip("{}")
         match = re.search(r"(?:^|\s)#([^\s}]+)", attributes)
         return match.group(1) if match else None
 
@@ -1297,7 +1616,7 @@ def apply_float_numbering(
         chunk = re.sub(
             r"(?m)^!\[(?P<caption>[^\]\n]*)\]"
             r"\((?P<target><[^>]+>|[^)\n]+)\)"
-            r"(?P<attrs>\{[^{}]*\})?\s*$",
+            r"(?P<attrs>\{[^{}]*\})?[ \t]*$",
             markdown_figure,
             chunk,
         )
@@ -1388,7 +1707,10 @@ def apply_float_numbering(
                 "YibinSectionMarker",
                 f"YIBIN_INTERNAL_EQUATION_{number.replace('.', '_')}",
             )
-            return f"$$\n{body}\n$$\n\n{marker}"
+            # Keep a blank line after the fenced marker.  Without it, the
+            # following prose can be parsed into the same Word paragraph as
+            # the marker, preventing equation-number post-processing.
+            return f"$$\n{body}\n$$\n\n{marker}\n\n"
 
         return re.sub(
             r"\$\$\s*\\begin\s*\{equation\}(?P<body>.*?)"
@@ -1621,7 +1943,7 @@ def _add_section_break(paragraph, base_sect_pr, page_format: str | None) -> None
             paragraph._p.remove(child)
 
 
-def _insert_toc_after(paragraph) -> None:
+def _insert_field_after(paragraph, instruction: str) -> None:
     toc_paragraph = OxmlElement("w:p")
     p_pr = OxmlElement("w:pPr")
     p_style = OxmlElement("w:pStyle")
@@ -1629,10 +1951,18 @@ def _insert_toc_after(paragraph) -> None:
     p_pr.append(p_style)
     toc_paragraph.append(p_pr)
     field = OxmlElement("w:fldSimple")
-    field.set(qn("w:instr"), 'TOC \\o "1-3" \\h \\z \\u')
+    field.set(qn("w:instr"), instruction)
     field.set(qn("w:dirty"), "true")
     toc_paragraph.append(field)
     paragraph._p.addnext(toc_paragraph)
+
+
+def _insert_toc_after(paragraph) -> None:
+    _insert_field_after(paragraph, 'TOC \\o "1-3" \\h \\z \\u')
+
+
+def _insert_caption_list_after(paragraph, sequence_name: str) -> None:
+    _insert_field_after(paragraph, f'TOC \\h \\z \\c "{sequence_name}"')
 
 
 def _format_equation_number(
@@ -1933,1849 +2263,144 @@ def _normalize_embedded_pngs(docx_path: Path) -> int:
     return len(replacements)
 
 
-def _insert_paragraph_before(document: Document, anchor, style_name: str):
-    paragraph = document.add_paragraph(style=style_name)
-    anchor._p.addprevious(paragraph._p)
-    return paragraph
+
+def _bind_oxml_module():
+    import word_oxml
+    module = word_oxml.bind_core(sys.modules[__name__])
+    for name in dir(module):
+        if name.startswith("_") and name not in {"_build_front_matter", "_build_cover_page", "_build_originality_page", "_build_authorization_page"}:
+            globals()[name] = getattr(module, name)
+    return module
 
 
-def _set_tabs(paragraph, stops: Iterable[tuple[int, str, str | None]]) -> None:
-    p_pr = paragraph._p.get_or_add_pPr()
-    existing = p_pr.find(qn("w:tabs"))
-    if existing is not None:
-        p_pr.remove(existing)
-    tabs = OxmlElement("w:tabs")
-    for position, alignment, leader in stops:
-        tab = OxmlElement("w:tab")
-        tab.set(qn("w:val"), alignment)
-        tab.set(qn("w:pos"), str(position))
-        if leader:
-            tab.set(qn("w:leader"), leader)
-        tabs.append(tab)
-    p_pr.append(tabs)
+_bind_oxml_module()
 
-
-def _add_tab(paragraph) -> None:
-    paragraph.add_run().add_tab()
-
-
-def _add_cover_label(paragraph, value: str) -> None:
-    run = paragraph.add_run(value)
-    run.style = "CoverLabel"
-    _set_run_fonts(run, "SimHei", "SimHei", 18, bold=True, underline=False)
-    if value.startswith("指导教师"):
-        # Eight 18 pt CJK glyphs occupy the official 144 pt label slot exactly.
-        # A tiny style-neutral character condensation prevents Word's table end
-        # mark from wrapping the final two glyphs without changing the font size.
-        spacing = OxmlElement("w:spacing")
-        spacing.set(qn("w:val"), "-4")
-        run._r.get_or_add_rPr().append(spacing)
-
-
-def _add_cover_value(paragraph, value: str, *, suffix: str = "") -> None:
-    # A zero-width character keeps an intentionally empty slot alive when Word
-    # opens and saves the layout table.  It is invisible and, unlike NBSP or
-    # ordinary spaces, cannot create a second underline.
-    visible = value.strip()
-    run = paragraph.add_run((visible if visible else "\u200b") + suffix)
-    run.style = "CoverValue"
-    _set_run_fonts(run, "SimSun", "SimSun", 16, bold=True, underline=False)
-
-
-def _prepare_cover_field(paragraph, stops: Iterable[tuple[int, str, str | None]]) -> None:
-    paragraph.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
-    paragraph.paragraph_format.first_line_indent = Pt(0)
-    paragraph.paragraph_format.left_indent = Pt(0)
-    paragraph.paragraph_format.right_indent = Pt(0)
-    paragraph.paragraph_format.space_before = Pt(0)
-    paragraph.paragraph_format.space_after = Pt(0)
-    paragraph.paragraph_format.keep_together = True
-    _set_tabs(paragraph, stops)
-
-
-def _set_paragraph_bottom_border(target) -> None:
-    """Give a paragraph or paragraph style one Word-native bottom border."""
-
-    p_pr = target._element.get_or_add_pPr()
-    borders = p_pr.find(qn("w:pBdr"))
-    if borders is None:
-        borders = OxmlElement("w:pBdr")
-        p_pr.append(borders)
-    bottom = borders.find(qn("w:bottom"))
-    if bottom is None:
-        bottom = OxmlElement("w:bottom")
-        borders.append(bottom)
-    bottom.set(qn("w:val"), "single")
-    bottom.set(qn("w:sz"), "8")
-    bottom.set(qn("w:space"), "0")
-    bottom.set(qn("w:color"), "000000")
-
-
-def _hide_run(run) -> None:
-    r_pr = run._r.get_or_add_rPr(); vanish = OxmlElement("w:vanish"); r_pr.append(vanish)
-
-
-def _set_fixed_table_geometry(table, widths_cm: Iterable[float], *, style_name: str) -> None:
-    """Give Word a complete fixed-width grid instead of width hints.
-
-    Setting only ``cell.width`` leaves the original equal-column ``tblGrid``
-    created by python-docx in place.  Word then trusts that grid on save and
-    can collapse or expand the cover columns.  Keep tblW, tblGrid and every
-    tcW in exact agreement.
-    """
-    widths = [int(Cm(width).twips) for width in widths_cm]
-    tbl_pr = table._tbl.tblPr
-    style = tbl_pr.find(qn("w:tblStyle"))
-    if style is None:
-        style = OxmlElement("w:tblStyle")
-        tbl_pr.insert(0, style)
-    style.set(qn("w:val"), style_name)
-
-    table_width = tbl_pr.find(qn("w:tblW"))
-    if table_width is None:
-        table_width = OxmlElement("w:tblW")
-        tbl_pr.append(table_width)
-    table_width.set(qn("w:type"), "dxa")
-    table_width.set(qn("w:w"), str(sum(widths)))
-
-    table_indent = tbl_pr.find(qn("w:tblInd"))
-    if table_indent is None:
-        table_indent = OxmlElement("w:tblInd")
-        tbl_pr.append(table_indent)
-    table_indent.set(qn("w:type"), "dxa")
-    table_indent.set(qn("w:w"), "0")
-
-    layout = tbl_pr.find(qn("w:tblLayout"))
-    if layout is None:
-        layout = OxmlElement("w:tblLayout")
-        tbl_pr.append(layout)
-    layout.set(qn("w:type"), "fixed")
-
-    cell_margins = tbl_pr.find(qn("w:tblCellMar"))
-    if cell_margins is None:
-        cell_margins = OxmlElement("w:tblCellMar")
-        tbl_pr.append(cell_margins)
-    for edge in ("top", "left", "bottom", "right"):
-        margin = cell_margins.find(qn(f"w:{edge}"))
-        if margin is None:
-            margin = OxmlElement(f"w:{edge}")
-            cell_margins.append(margin)
-        margin.set(qn("w:type"), "dxa")
-        margin.set(qn("w:w"), "0")
-
-    grid = table._tbl.tblGrid
-    for child in list(grid):
-        grid.remove(child)
-    for width in widths:
-        column = OxmlElement("w:gridCol")
-        column.set(qn("w:w"), str(width))
-        grid.append(column)
-
-    for row in table.rows:
-        cant_split = row._tr.get_or_add_trPr().find(qn("w:cantSplit"))
-        if cant_split is None:
-            row._tr.get_or_add_trPr().append(OxmlElement("w:cantSplit"))
-        for cell, width in zip(row.cells, widths, strict=True):
-            tc_pr = cell._tc.get_or_add_tcPr()
-            tc_w = tc_pr.find(qn("w:tcW"))
-            if tc_w is None:
-                tc_w = OxmlElement("w:tcW")
-                tc_pr.append(tc_w)
-            tc_w.set(qn("w:type"), "dxa")
-            tc_w.set(qn("w:w"), str(width))
-
-
-def _set_table_borders_none(table) -> None:
-    tbl_pr = table._tbl.tblPr
-    borders = tbl_pr.find(qn("w:tblBorders"))
-    if borders is None:
-        borders = OxmlElement("w:tblBorders")
-        tbl_pr.append(borders)
-    else:
-        for child in list(borders):
-            borders.remove(child)
-    for edge in ("top", "left", "bottom", "right", "insideH", "insideV"):
-        node = OxmlElement(f"w:{edge}")
-        node.set(qn("w:val"), "nil")
-        borders.append(node)
-
-
-def _insert_layout_separator(anchor) -> None:
-    """Prevent Word from merging adjacent layout tables on open/save."""
-    paragraph = OxmlElement("w:p")
-    p_pr = OxmlElement("w:pPr")
-    spacing = OxmlElement("w:spacing")
-    spacing.set(qn("w:before"), "0")
-    spacing.set(qn("w:after"), "0")
-    spacing.set(qn("w:line"), "1")
-    spacing.set(qn("w:lineRule"), "exact")
-    p_pr.append(spacing)
-    mark_properties = OxmlElement("w:rPr")
-    mark_properties.append(OxmlElement("w:vanish"))
-    mark_size = OxmlElement("w:sz")
-    mark_size.set(qn("w:val"), "2")
-    mark_properties.append(mark_size)
-    mark_size_cs = OxmlElement("w:szCs")
-    mark_size_cs.set(qn("w:val"), "2")
-    mark_properties.append(mark_size_cs)
-    p_pr.append(mark_properties)
-    paragraph.append(p_pr)
-    anchor._p.addprevious(paragraph)
-
-
-def _insert_cover_table(
+def _apply_common_body_formatting(
     document: Document,
-    anchor,
-    cells: list[tuple[str, str, float]],
     *,
-    row_height_pt: float,
-    hidden_tokens: str = "",
-):
-    """Insert one official cover row as a borderless layout table."""
-    table = document.add_table(rows=1, cols=len(cells))
-    anchor._p.addprevious(table._tbl)
-    # The official cover starts every field row at the 3 cm text margin, while
-    # the underline length differs from row to row.  Left alignment preserves
-    # that common origin; centring narrower rows shifts every underline.
-    table.alignment = WD_TABLE_ALIGNMENT.LEFT
-    table.autofit = False
-    _set_fixed_table_geometry(table, (cell[2] for cell in cells), style_name="YibinCoverLayout")
-    _set_table_borders_none(table)
-    row = table.rows[0]
-    row.height = Pt(row_height_pt)
-    row.height_rule = WD_ROW_HEIGHT_RULE.EXACTLY
-    for index, (kind, value, width_cm) in enumerate(cells):
-        cell = table.cell(0, index)
-        p = cell.paragraphs[0]
-        p.paragraph_format.space_before = Pt(0); p.paragraph_format.space_after = Pt(0); p.paragraph_format.first_line_indent = Pt(0)
-        p.paragraph_format.keep_together = True
-        p_pr = p._p.get_or_add_pPr()
-        indent = p_pr.find(qn("w:ind"))
-        if indent is None:
-            indent = OxmlElement("w:ind")
-            p_pr.append(indent)
-        for attribute in ("left", "right", "firstLine", "leftChars", "rightChars", "firstLineChars"):
-            indent.set(qn(f"w:{attribute}"), "0")
-        if kind == "label":
-            if index == 0:
-                p.style = document.styles["CoverField"]
-                if value.startswith("指导教师"):
-                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            else:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p.paragraph_format.line_spacing = 1.0
-            _add_cover_label(p, value)
-        else:
-            p.style = document.styles["CoverValueLine"]
-            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            _add_cover_value(p, value)
-    _insert_layout_separator(anchor)
-    return table
-
-
-def _calibrate_cover_styles(document: Document) -> None:
-    """Apply the official first-page rhythm through reusable Word styles."""
-
-    logo = document.styles["CoverLogo"].paragraph_format
-    logo.space_before = Pt(2.0)
-    logo.space_after = Pt(0)
-
-    thesis_type = document.styles["CoverThesisType"].paragraph_format
-    thesis_type.space_before = Pt(24.35)
-    thesis_type.space_after = Pt(52.35)
-
-    title = document.styles["CoverTitle"].paragraph_format
-    title.space_before = Pt(0)
-    title.space_after = Pt(47.3)
-    title.line_spacing = 2.0
-
-    field = document.styles["CoverField"].paragraph_format
-    field.space_before = Pt(0)
-    field.space_after = Pt(0)
-    field.line_spacing = 1.0
-
-    try:
-        value_line_style = document.styles["CoverValueLine"]
-    except KeyError:
-        value_line_style = document.styles.add_style(
-            "CoverValueLine", WD_STYLE_TYPE.PARAGRAPH
-        )
-    value_line_style.base_style = document.styles["Normal"]
-    value_line = value_line_style.paragraph_format
-    value_line.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    value_line.first_line_indent = Pt(0)
-    value_line.left_indent = Pt(0)
-    value_line.right_indent = Pt(0)
-    value_line.space_before = Pt(0)
-    value_line.space_after = Pt(0)
-    # An exact 20 pt line box keeps the rule at the official underline height
-    # even when the slot is empty and contains only the zero-width keeper.
-    value_line.line_spacing = Pt(20.0)
-    value_line.keep_together = True
-    _set_paragraph_bottom_border(value_line_style)
-
-
-def _insert_declaration_table(
-    document: Document,
-    anchor,
-    cells: list[tuple[str, str | Path | None, float]],
-    *,
-    space_before: float = 0,
-    signature_background: str = "preserve",
-):
-    """Insert fixed signature/date slots that survive a Word save."""
-    table = document.add_table(rows=1, cols=len(cells))
-    anchor._p.addprevious(table._tbl)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = False
-    _set_fixed_table_geometry(table, (cell[2] for cell in cells), style_name="YibinFrontLayout")
-    _set_table_borders_none(table)
-    for index, (kind, value, width_cm) in enumerate(cells):
-        cell = table.cell(0, index)
-        paragraph = cell.paragraphs[0]
-        paragraph.style = document.styles[
-            "DeclarationDate" if kind == "date" else "DeclarationSignature"
-        ]
-        paragraph.paragraph_format.first_line_indent = Pt(0)
-        paragraph.paragraph_format.space_before = Pt(space_before)
-        paragraph.paragraph_format.space_after = Pt(0)
-        p_pr = paragraph._p.get_or_add_pPr()
-        indent = p_pr.find(qn("w:ind"))
-        if indent is None:
-            indent = OxmlElement("w:ind")
-            p_pr.append(indent)
-        for attribute in ("left", "right", "firstLine", "leftChars", "rightChars", "firstLineChars"):
-            indent.set(qn(f"w:{attribute}"), "0")
-        if kind == "label":
-            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.BOTTOM
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        if kind == "signature":
-            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.BOTTOM
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-            # Keep the rule attached to the signature paragraph.  A cell
-            # border sits at the bottom of the tallest image row and therefore
-            # drifts visibly downward compared with Word's official line.
-            _set_paragraph_bottom_border(paragraph)
-            if isinstance(value, Path):
-                picture_run = paragraph.add_run()
-                picture_source: str | io.BytesIO = str(value)
-                if signature_background == "whiten":
-                    picture_source = whiten_signature_image(value)
-                picture_run.add_picture(
-                    picture_source,
-                    width=Cm(max(0.5, min(width_cm - 0.2, 2.6))),
-                )
-                for doc_property in picture_run._r.iter(qn("wp:docPr")):
-                    doc_property.attrib.pop("descr", None)
-            else:
-                paragraph.add_run("\u200b")
-        else:
-            run = paragraph.add_run(str(value) if value else "\u200b")
-            _set_run_fonts(run, "SimSun", "SimSun", 12, bold=False, underline=False)
-    _insert_layout_separator(anchor)
-    return table
-
-
-def _resolve_cover_logo(
-    metadata: dict[str, str],
-    project_root: Path,
-    main_dir: Path,
-    metadata_dir: Path,
-    *,
-    allow_project_fallback: bool,
-) -> Path | None:
-    configured = metadata.get("logo", "builtin").strip()
-    normalized = configured.casefold()
-    if normalized in {"builtin", "built-in", "default"}:
-        logo = (project_root / "assets" / "yibin-university-logo.png").resolve()
-        if not logo.is_file():
-            raise BuildError(f"模板内置封面校徽不存在：{logo}")
-        return logo
-    if not configured or normalized == "none":
-        return None
-    configured_path = Path(configured).expanduser()
-    if configured_path.is_absolute():
-        candidates = [configured_path]
-    else:
-        candidates = [
-            main_dir / configured_path,
-            metadata_dir / configured_path,
-        ]
-    if allow_project_fallback:
-        candidates.extend(
-            [
-                project_root / "assets" / "yibin-university-logo.png",
-                project_root / "assets" / "yibin-logo.png",
+    discipline: str,
+    labels: LabelRegistry,
+    citations: CitationRegistry,
+    citation_mode: str,
+    table_layouts: list[LatexTableLayout],
+    word_figure_sequence: str,
+    word_table_sequence: str,
+) -> int:
+    _require_independent_heading_styles(document)
+    reusable_style_map = {
+        "Normal": STYLE_BODY,
+        "Body Text": STYLE_BODY,
+        "Compact": STYLE_BODY,
+        "First Paragraph": STYLE_FIRST_PARAGRAPH,
+        "Heading 1": STYLE_HEADING_1,
+        "Heading 2": STYLE_HEADING_2,
+        "Heading 3": STYLE_HEADING_3,
+        "Heading 4": STYLE_HEADING_4,
+        "Yibin Heading 1": STYLE_HEADING_1,
+        "Yibin Heading 2": STYLE_HEADING_2,
+        "Yibin Heading 3": STYLE_HEADING_3,
+        "Yibin Heading 4": STYLE_HEADING_4,
+        "ChineseAbstract": STYLE_CHINESE_ABSTRACT,
+        "EnglishAbstract": STYLE_ENGLISH_ABSTRACT,
+        "Keywords": STYLE_KEYWORDS,
+        "Bibliography": STYLE_BIBLIOGRAPHY,
+        "Notes": STYLE_NOTES,
+    }
+    for paragraph in document.paragraphs:
+        source_style = paragraph.style.name
+        target_style = reusable_style_map.get(source_style)
+        if target_style:
+            paragraph.style = document.styles[target_style]
+        if source_style == "FrontTitle":
+            paragraph.style = document.styles[
+                STYLE_ENGLISH_ABSTRACT_TITLE
+                if paragraph.text.strip() == "Abstract"
+                else STYLE_FRONT_TITLE
             ]
-        )
-    logo = next(
-        (
-            candidate.resolve()
-            for candidate in dict.fromkeys(candidates)
-            if candidate.is_file()
-        ),
-        None,
-    )
-    if logo is None and configured and not allow_project_fallback:
-        raise BuildError(
-            f"外部入口声明的封面校徽不存在：{configured}；"
-            "不会回退到模板目录中的同名资源。"
-        )
-    return logo
+        for run in paragraph.runs:
+            if paragraph.style.name in reusable_style_map.values():
+                _clear_direct_run_typography(run)
 
+    _apply_list_paragraph_styles(document)
 
-def _resolve_signature_asset(
-    metadata: dict[str, str],
-    key: str,
-    main_dir: Path,
-    metadata_dir: Path,
-) -> Path | None:
-    configured = metadata.get(key, "").strip()
-    if not configured or configured.casefold() in {"none", "null"}:
-        return None
-    configured_path = Path(configured).expanduser()
-    candidates = (
-        [configured_path]
-        if configured_path.is_absolute()
-        else [metadata_dir / configured_path, main_dir / configured_path]
-    )
-    asset = next(
-        (
-            candidate.resolve()
-            for candidate in dict.fromkeys(candidates)
-            if candidate.is_file()
-        ),
-        None,
-    )
-    if asset is None:
-        raise BuildError(f"元数据 {key} 声明的签名图片不存在：{configured}")
-    return asset
-
-
-def _build_cover_page(
-    document: Document,
-    anchor,
-    metadata: dict[str, str],
-    project_root: Path,
-    main_dir: Path,
-    metadata_dir: Path,
-    *,
-    allow_project_fallback: bool,
-    page_break_after: bool,
-) -> None:
-    _calibrate_cover_styles(document)
-    logo = _resolve_cover_logo(
-        metadata,
-        project_root,
-        main_dir,
-        metadata_dir,
-        allow_project_fallback=allow_project_fallback,
-    )
-    logo_paragraph = _insert_paragraph_before(document, anchor, "CoverLogo")
-    logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    logo_paragraph.paragraph_format.first_line_indent = Pt(0)
-    if logo is not None:
-        picture_run = logo_paragraph.add_run()
-        picture_run.add_picture(str(logo), width=Cm(13.15), height=Cm(3.65))
-        for doc_property in picture_run._r.iter(qn("wp:docPr")):
-            doc_property.attrib.pop("descr", None)
-    else:
-        run = logo_paragraph.add_run("宜宾学院")
-        _set_run_fonts(run, "SimHei", "Times New Roman", 26, bold=True)
-
-    thesis_type = _insert_paragraph_before(document, anchor, "CoverThesisType")
-    thesis_type.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    thesis_type.paragraph_format.first_line_indent = Pt(0)
-    type_run = thesis_type.add_run("本科生毕业论文（设计）")
-    _set_run_fonts(type_run, "SimHei", "SimHei", 28, bold=True, underline=False)
-
-    title_paragraph = _insert_paragraph_before(document, anchor, "CoverTitle")
-    title_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title_paragraph.paragraph_format.first_line_indent = Pt(0)
-    title_run = title_paragraph.add_run(metadata.get("title", "").strip() or "（填写中文题目）")
-    _set_run_fonts(title_run, "SimHei", "SimHei", 18, bold=True, underline=True)
-
-    # Widths are distilled from the official Word cover at page coordinates
-    # (points): college 84.85|183.85|513.00, major 84.85|183.85|522.00,
-    # student 84.85|174.85|513.00.  Each value cell owns the only visible rule.
-    _insert_cover_table(
-        document,
-        anchor,
-        [("label", "学院（部）", 3.4925), ("value", metadata.get("college", ""), 11.6121)],
-        row_height_pt=46.30,
-    )
-    _insert_cover_table(
-        document,
-        anchor,
-        [("label", "专    业", 3.4925), ("value", metadata.get("major", ""), 11.9296)],
-        row_height_pt=46.25,
-    )
-    _insert_cover_table(
-        document,
-        anchor,
-        [("label", "学生姓名", 3.1750), ("value", metadata.get("author", ""), 11.9296)],
-        row_height_pt=47.60,
-    )
-
-    _insert_cover_table(
-        document, anchor,
-        [("label", "学    号", 3.1750), ("value", metadata.get("student-id", ""), 5.6686),
-         ("label", "年级", 1.5875), ("value", format_grade_class(metadata), 4.5367)],
-        row_height_pt=46.25,
-    )
-
-    advisor_rows = (
-        (
-            "指导教师（校内）",
-            metadata.get("advisor", ""),
-            metadata.get("advisor-title", ""),
-        ),
-        (
-            "指导教师（校外）",
-            metadata.get("external-advisor", ""),
-            metadata.get("external-advisor-title", ""),
-        ),
-    )
-    last_table = None
-    for label, person, professional_title in advisor_rows:
-        last_table = _insert_cover_table(
-            document, anchor,
-            [("label", label, 5.0800), ("value", person, 5.1259),
-             ("label", "职称", 1.5416), ("value", professional_title, 3.1289)],
-            row_height_pt=46.30,
-        )
-
-
-def _estimate_declaration_lines(text: str) -> int:
-    units = sum(0.5 if ord(character) < 128 else 1.0 for character in text)
-    if units <= 28:
-        return 1
-    return 1 + int((units - 28 + 30.999) // 31)
-
-
-def _add_declaration_text(document: Document, anchor, style_name: str, text: str):
-    paragraph = _insert_paragraph_before(document, anchor, style_name)
-    run = paragraph.add_run(text)
-    _set_run_fonts(run, "SimSun", "SimSun", 12, bold=False, underline=False)
-    return paragraph
-
-
-def _build_originality_page(
-    document: Document,
-    anchor,
-    metadata: dict[str, str],
-    author_signature: Path | None,
-    signature_background: str,
-) -> None:
-    heading = _insert_paragraph_before(document, anchor, "DeclarationTitle")
-    heading.paragraph_format.page_break_before = True
-    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    heading_run = heading.add_run("原创性声明")
-    _set_run_fonts(heading_run, "SimHei", "SimHei", 16, bold=True, underline=False)
-
-    title = metadata.get("title", "").strip() or "（填写中文题目）"
-    statement = (
-        f"本人呈交的学位论文（设计）《{title}》，是在导师的指导下，独立进行研究取得的成果。"
-        "除文中已经注明引用的内容外，本论文（设计）不包括其他个人或集体已经发表或撰写过的作品成果。"
-        "对本文（设计）做出贡献的个人和集体，均已在文中以明确方式标明。"
-        "本人完全意识到本声明的法律后果，因本声明而产生的法律后果由本人承担。"
-    )
-    body = _add_declaration_text(document, anchor, "DeclarationBody", statement)
-    body.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    body.paragraph_format.first_line_indent = Pt(24)
-
-    extra_lines = max(0, _estimate_declaration_lines(statement) - 5)
-    _insert_declaration_table(
-        document,
-        anchor,
-        [
-            ("spacer", "", 0.85),
-            ("label", "学位论文作者：", 3.6),
-            ("signature", author_signature, 3.0),
-            ("spacer", "", 8.05),
-        ],
-        space_before=max(0, 36 - extra_lines * 31.2),
-        signature_background=signature_background,
-    )
-
-    date = _add_declaration_text(
-        document,
-        anchor,
-        "DeclarationDate",
-        "日期：    年   月   日",
-    )
-    date.paragraph_format.first_line_indent = Pt(24)
-
-    lead = _insert_paragraph_before(document, anchor, "DeclarationRegulationLead")
-    lead_run = lead.add_run("附：")
-    lead_run.style = "DeclarationRegulationLeadLabel"
-    _set_run_fonts(lead_run, "SimSun", "SimSun", 16, bold=True, underline=False)
-    regulation_title = lead.add_run(
-        "《普通高等学校学生管理规定》（中华人民共和国教育部令第41号）"
-    )
-    regulation_title.style = "DeclarationRegulationText"
-    _set_run_fonts(regulation_title, "SimSun", "SimSun", 14, bold=True, underline=False)
-
-    clause = _insert_paragraph_before(document, anchor, "DeclarationRegulationClause")
-    clause_run = clause.add_run(
-        "第五十二条\u00a0学生有下列情形之一，学校可以给予开除学籍处分："
-    )
-    clause_run.style = "DeclarationRegulationText"
-    _set_run_fonts(clause_run, "SimSun", "SimSun", 14, bold=True, underline=False)
-
-    item = _insert_paragraph_before(document, anchor, "DeclarationRegulationItem")
-    item_run = item.add_run(
-        "（五）学位论文、公开发表的研究成果存在抄袭、篡改、伪造等学术不端行为，"
-        "情节严重的，或者代写论文、买卖论文的；"
-    )
-    item_run.style = "DeclarationRegulationText"
-    _set_run_fonts(item_run, "SimSun", "SimSun", 14, bold=True, underline=False)
-    item.add_run().add_break(WD_BREAK.PAGE)
-
-
-def _build_authorization_page(
-    document: Document,
-    anchor,
-    metadata: dict[str, str],
-    author_signature: Path | None,
-    advisor_signature: Path | None,
-    signature_background: str,
-) -> None:
-    heading = _insert_paragraph_before(document, anchor, "DeclarationTitle")
-    heading.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    heading_run = heading.add_run("学位论文（设计）版权使用授权书")
-    _set_run_fonts(heading_run, "SimHei", "SimHei", 16, bold=True, underline=False)
-
-    authorization = (
-        "本学位论文（设计）作者完全了解学校有关保留、使用学位论文（设计）的规定，"
-        "同意学校保留并向国家有关部门或机构送交论文（设计）的复印件和电子版，允许论文（设计）"
-        "被查阅和借阅。本人授权宜宾学院将本学位论文（设计）的全部或部分内容编入有关数据库进行检索，"
-        "可以采用影印、缩印或扫描等复制手段保存和汇编。"
-    )
-    body = _add_declaration_text(document, anchor, "DeclarationBody", authorization)
-    body.alignment = WD_ALIGN_PARAGRAPH.LEFT
-    body.paragraph_format.first_line_indent = Pt(24)
-
-    choice_intro = _insert_paragraph_before(document, anchor, "DeclarationBody")
-    choice_intro.paragraph_format.first_line_indent = Pt(24)
-    choice_intro.paragraph_format.line_spacing = 1.5
-    choice_intro.paragraph_format.space_before = Pt(36)
-    intro_run = choice_intro.add_run("本学位论文（设计）属于")
-    _set_run_fonts(intro_run, "SimSun", "SimSun", 12, bold=False, underline=False)
-    instruction = choice_intro.add_run("（请在以下相应方框内打“√”）作品")
-    _set_run_fonts(instruction, "SimSun", "SimSun", 12, bold=False, underline=True)
-
-    confidential = metadata.get("secrecy", "public").strip().lower() == "confidential"
-    declassify = metadata.get("declassify-year", "").strip() or "____"
-    for text in (
-        f"保  密{'■' if confidential else '□'}，在 {declassify} 年解密后适用本授权书。",
-        f"不保密{'□' if confidential else '■'}。",
-    ):
-        paragraph = _add_declaration_text(document, anchor, "DeclarationBody", text)
-        paragraph.paragraph_format.first_line_indent = Pt(24)
-        paragraph.paragraph_format.line_spacing = 1.5
-
-    _insert_declaration_table(
-        document,
-        anchor,
-        [
-            ("label", "作者（签名）：", 3.5),
-            ("signature", author_signature, 2.8),
-            ("spacer", "", 0.2),
-            ("label", "指导教师（签名）：", 4.2),
-            ("signature", advisor_signature, 2.8),
-        ],
-        space_before=72,
-        signature_background=signature_background,
-    )
-    _insert_declaration_table(
-        document,
-        anchor,
-        [
-            ("date", "日期：    年   月   日", 6.2),
-            ("spacer", "", 1.3),
-            ("date", "日期：    年   月   日", 6.0),
-        ],
-    )
-
-
-def _build_front_matter(
-    document: Document,
-    anchor,
-    metadata: dict[str, str],
-    project_root: Path,
-    main_dir: Path,
-    metadata_dir: Path,
-    *,
-    allow_project_fallback: bool,
-    include_cover: bool,
-    include_declarations: bool,
-) -> None:
-    if include_cover:
-        _build_cover_page(
-            document,
-            anchor,
-            metadata,
-            project_root,
-            main_dir,
-            metadata_dir,
-            allow_project_fallback=allow_project_fallback,
-            page_break_after=include_declarations,
-        )
-    if include_declarations:
-        signature_background = metadata.get("signature-background", "preserve").strip().casefold()
-        if signature_background not in {"preserve", "whiten"}:
-            raise BuildError(
-                "元数据 signature-background 只能是 preserve 或 whiten："
-                + signature_background
-            )
-        author_signature = _resolve_signature_asset(
-            metadata,
-            "author-signature",
-            main_dir,
-            metadata_dir,
-        )
-        advisor_signature = _resolve_signature_asset(
-            metadata,
-            "advisor-signature",
-            main_dir,
-            metadata_dir,
-        )
-        _build_originality_page(
-            document,
-            anchor,
-            metadata,
-            author_signature,
-            signature_background,
-        )
-        _build_authorization_page(
-            document,
-            anchor,
-            metadata,
-            author_signature,
-            advisor_signature,
-            signature_background,
-        )
-
-
-def _clear_direct_paragraph_format(paragraph, *names: str) -> None:
-    p_pr = paragraph._p.get_or_add_pPr()
-    for name in names:
-        node = p_pr.find(qn(f"w:{name}"))
-        if node is not None:
-            p_pr.remove(node)
-
-
-def _clear_direct_run_typography(run) -> None:
-    r_pr = run._r.find(qn("w:rPr"))
-    if r_pr is None:
-        return
-    for name in ("rFonts", "sz", "szCs"):
-        node = r_pr.find(qn(f"w:{name}"))
-        if node is not None:
-            r_pr.remove(node)
-    if len(r_pr) == 0:
-        run._r.remove(r_pr)
-
-
-def _clear_title_run_typography(run) -> None:
-    r_pr = run._r.find(qn("w:rPr"))
-    if r_pr is None:
-        return
-    for name in (
-        "rFonts",
-        "b",
-        "bCs",
-        "i",
-        "iCs",
-        "color",
-        "u",
-        "sz",
-        "szCs",
-        "highlight",
-        "caps",
-        "smallCaps",
-        "strike",
-        "dstrike",
-        "vertAlign",
-        "spacing",
-        "position",
-        "kern",
-    ):
-        node = r_pr.find(qn(f"w:{name}"))
-        if node is not None:
-            r_pr.remove(node)
-    if len(r_pr) == 0:
-        run._r.remove(r_pr)
-
-
-def _next_numbering_id(numbering, tag: str, attribute: str) -> int:
-    values = [
-        int(value)
-        for element in numbering.findall(qn(f"w:{tag}"))
-        if (value := element.get(qn(f"w:{attribute}"))) is not None
-        and value.isdigit()
-    ]
-    return max(values, default=0) + 1
-
-
-def _set_style_numbering(style, num_id: int, level: int) -> None:
-    p_pr = style._element.get_or_add_pPr()
-    existing = p_pr.find(qn("w:numPr"))
-    if existing is not None:
-        p_pr.remove(existing)
-    num_pr = OxmlElement("w:numPr")
-    ilvl = OxmlElement("w:ilvl")
-    ilvl.set(qn("w:val"), str(level))
-    num = OxmlElement("w:numId")
-    num.set(qn("w:val"), str(num_id))
-    num_pr.extend([ilvl, num])
-    insertion = 0
-    for index, child_element in enumerate(p_pr):
-        if child_element.tag == qn("w:pStyle"):
-            insertion = index + 1
-    p_pr.insert(insertion, num_pr)
-
-
-def _configure_heading_numbering(document: Document, discipline: str) -> None:
-    """Attach a real four-level Word list to the reusable heading styles."""
-
-    numbering = document.part.numbering_part.element
-    abstract_id = _next_numbering_id(numbering, "abstractNum", "abstractNumId")
-    num_id = _next_numbering_id(numbering, "num", "numId")
-    abstract = OxmlElement("w:abstractNum")
-    abstract.set(qn("w:abstractNumId"), str(abstract_id))
-    nsid = OxmlElement("w:nsid")
-    nsid.set(qn("w:val"), hashlib.sha1(f"YibinHeading:{discipline}".encode()).hexdigest()[:8].upper())
-    multi = OxmlElement("w:multiLevelType")
-    multi.set(qn("w:val"), "multilevel")
-    abstract.extend([nsid, multi])
-
+    heading_one = document.styles[STYLE_HEADING_1]
     if discipline == "science":
-        formats = ["decimal"] * 4
-        level_texts = ["%1", "%1.%2", "%1.%2.%3", "%1.%2.%3.%4"]
-        suffix = "space"
+        heading_one.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        heading_one.paragraph_format.first_line_indent = Pt(0)
+        heading_one.paragraph_format.page_break_before = True
+        first_line = "0"
+        first_chars = "0"
     else:
-        formats = [
-            "chineseCounting",
-            "chineseCounting",
-            "decimal",
-            "decimal",
-        ]
-        level_texts = ["%1、", "（%2）", "%3.", "（%4）"]
-        suffix = "nothing"
+        heading_one.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        heading_one.paragraph_format.first_line_indent = Pt(24)
+        heading_one.paragraph_format.page_break_before = True
+        first_line = "480"
+        first_chars = "200"
+    heading_ppr = heading_one.element.get_or_add_pPr()
+    heading_indent = heading_ppr.find(qn("w:ind"))
+    if heading_indent is None:
+        heading_indent = OxmlElement("w:ind")
+        heading_ppr.append(heading_indent)
+    heading_indent.set(qn("w:firstLine"), first_line)
+    heading_indent.set(qn("w:firstLineChars"), first_chars)
 
-    style_names = [
+    unnumbered_titles = {"结论", "注释", "参考文献", "附录", "致谢"}
+    if discipline == "humanities":
+        unnumbered_titles.add("绪论")
+    for paragraph in document.paragraphs:
+        text = paragraph.text.strip()
+        if paragraph.style.name == STYLE_HEADING_1 and text in unnumbered_titles:
+            paragraph.style = document.styles[STYLE_UNNUMBERED_HEADING]
+            _clear_paragraph_numbering(paragraph)
+        if re.match(r"^附录[A-ZＡ-Ｚ0-9一二三四五六七八九十]+(?:\s|　)", text):
+            paragraph.style = document.styles[STYLE_APPENDIX_HEADING]
+
+    heading_abstract_id = _configure_heading_numbering(document, discipline)
+    if discipline == "humanities":
+        _isolate_humanities_introduction_numbering(
+            document,
+            heading_abstract_id,
+        )
+    _configure_appendix_section_numbering(document, discipline)
+    title_styles = {
         STYLE_HEADING_1,
         STYLE_HEADING_2,
         STYLE_HEADING_3,
         STYLE_HEADING_4,
-    ]
-    for level, (style_name, number_format, level_text) in enumerate(
-        zip(style_names, formats, level_texts)
-    ):
-        lvl = OxmlElement("w:lvl")
-        lvl.set(qn("w:ilvl"), str(level))
-        start = OxmlElement("w:start")
-        start.set(qn("w:val"), "1")
-        num_fmt = OxmlElement("w:numFmt")
-        num_fmt.set(qn("w:val"), number_format)
-        p_style = OxmlElement("w:pStyle")
-        p_style.set(qn("w:val"), document.styles[style_name].style_id)
-        suff = OxmlElement("w:suff")
-        suff.set(qn("w:val"), suffix)
-        text = OxmlElement("w:lvlText")
-        text.set(qn("w:val"), level_text)
-        justification = OxmlElement("w:lvlJc")
-        justification.set(qn("w:val"), "left")
-        # Word's default for a multilevel list is to restart each lower level
-        # when its immediately higher level advances.  Explicit lvlRestart
-        # values generated by hand are easy to get off by one, so retain the
-        # native default verified through Word COM.
-        lvl.extend([start, num_fmt, p_style, suff, text, justification])
-        abstract.append(lvl)
-        _set_style_numbering(document.styles[style_name], num_id, level)
-
-    first_num = numbering.find(qn("w:num"))
-    if first_num is None:
-        numbering.append(abstract)
-    else:
-        numbering.insert(numbering.index(first_num), abstract)
-    num = OxmlElement("w:num")
-    num.set(qn("w:numId"), str(num_id))
-    abstract_ref = OxmlElement("w:abstractNumId")
-    abstract_ref.set(qn("w:val"), str(abstract_id))
-    num.append(abstract_ref)
-    numbering.append(num)
-
-
-def _resolve_table_column_widths(
-    layout: LatexTableLayout | None,
-    raw_widths: list[int],
-    target_width: int,
-) -> list[int]:
-    if layout is not None and len(layout.columns) == len(raw_widths):
-        fractions = [column.width_fraction for column in layout.columns]
-        if any(value is not None and value > 0 for value in fractions):
-            known_sum = sum(value or 0 for value in fractions)
-            unknown = [index for index, value in enumerate(fractions) if value is None]
-            if unknown:
-                outer_fraction = layout.table_width_fraction or 1.0
-                if 0 < known_sum < outer_fraction:
-                    fallback = (outer_fraction - known_sum) / len(unknown)
-                else:
-                    known = [value for value in fractions if value is not None and value > 0]
-                    fallback = (sum(known) / len(known)) if known else 1
-                weights = [fallback if value is None else value for value in fractions]
-            else:
-                weights = [value or 0 for value in fractions]
-            if sum(weights) > 0:
-                scale = target_width / sum(weights)
-                widths = [max(1, round(weight * scale)) for weight in weights]
-                widths[-1] += target_width - sum(widths)
-                return widths
-
-    usable = raw_widths if len(raw_widths) > 0 and sum(raw_widths) > 0 else [1]
-    scale = target_width / sum(usable)
-    widths = [max(1, round(width * scale)) for width in usable]
-    widths[-1] += target_width - sum(widths)
-    return widths
-
-
-def _table_style_for_alignment(row_index: int, horizontal: str) -> str:
-    if row_index == 0:
-        return {
-            "left": STYLE_TABLE_HEADER_LEFT,
-            "center": STYLE_TABLE_HEADER,
-            "right": STYLE_TABLE_HEADER_RIGHT,
-        }.get(horizontal, STYLE_TABLE_HEADER_LEFT)
-    return {
-        "left": STYLE_TABLE_TEXT,
-        "center": STYLE_TABLE_CENTER,
-        "right": STYLE_TABLE_RIGHT,
-    }.get(horizontal, STYLE_TABLE_TEXT)
-
-
-def _caption_number_by_table(document: Document) -> dict[object, str]:
-    result: dict[object, str] = {}
-    body = document._element.body
-    children = list(body)
-    for index, element in enumerate(children):
-        if element.tag != qn("w:tbl"):
-            continue
-        for previous in reversed(children[max(0, index - 3) : index]):
-            if previous.tag == qn("w:tbl"):
-                break
-            if previous.tag != qn("w:p"):
-                continue
-            value = "".join(node.text or "" for node in previous.iter(qn("w:t"))).strip()
-            match = re.match(r"^表\s*([0-9]+(?:\.[0-9]+)?)\b", value)
-            if match:
-                result[element] = match.group(1)
-                break
-    return result
-
-
-def _format_tables(
-    document: Document,
-    table_layouts: Iterable[LatexTableLayout] = (),
-    labels: LabelRegistry | None = None,
-) -> None:
-    page_target_width = int(Cm(15.5).twips)
-    layouts = list(table_layouts)
-    caption_numbers = _caption_number_by_table(document)
-    numbered_layouts: dict[str, LatexTableLayout] = {}
-    if labels is not None:
-        for layout in layouts:
-            target = labels.targets.get(layout.label or "")
-            if target is not None and target.kind == "表":
-                numbered_layouts[target.number] = layout
-    unused_layouts = list(layouts)
-    used_layout_ids: set[int] = set()
-    semantic_table_count = 0
-    for table in document.tables:
-        style = table._tbl.tblPr.find(qn("w:tblStyle"))
-        if style is not None and style.get(qn("w:val")) in {"YibinCoverLayout", "YibinFrontLayout"}:
-            continue
-        semantic_table_count += 1
-        caption_number = caption_numbers.get(table._tbl)
-        source_layout = numbered_layouts.get(caption_number or "")
-        if source_layout is None:
-            source_layout = next(
-                (layout for layout in unused_layouts if id(layout) not in used_layout_ids),
-                None,
-            )
-        if source_layout is not None:
-            used_layout_ids.add(id(source_layout))
-        target_width = page_target_width
-        if (
-            source_layout is not None
-            and source_layout.table_width_fraction is not None
-            and source_layout.table_width_fraction > 0
-        ):
-            effective_fraction = source_layout.table_width_fraction
-            known_widths = [
-                column.width_fraction
-                for column in source_layout.columns
-                if column.width_fraction is not None
-                and column.width_fraction > 0
-            ]
-            if len(known_widths) == len(source_layout.columns):
-                effective_fraction = min(
-                    effective_fraction,
-                    sum(known_widths),
-                )
-            target_width = max(
-                1,
-                round(
-                    page_target_width
-                    * min(1.0, effective_fraction)
-                ),
-            )
-        table.alignment = WD_TABLE_ALIGNMENT.CENTER
-        table.style = document.styles[STYLE_THREE_LINE_TABLE]
-        table.autofit = False
-        tbl_pr = table._tbl.tblPr
-
-        table_width = tbl_pr.find(qn("w:tblW"))
-        if table_width is None:
-            table_width = OxmlElement("w:tblW")
-            tbl_pr.append(table_width)
-        table_width.set(qn("w:type"), "dxa")
-        table_width.set(qn("w:w"), str(target_width))
-
-        table_indent = tbl_pr.find(qn("w:tblInd"))
-        if table_indent is None:
-            table_indent = OxmlElement("w:tblInd")
-            tbl_pr.append(table_indent)
-        table_indent.set(qn("w:type"), "dxa")
-        table_indent.set(qn("w:w"), "0")
-
-        layout = tbl_pr.find(qn("w:tblLayout"))
-        if layout is None:
-            layout = OxmlElement("w:tblLayout")
-            tbl_pr.append(layout)
-        layout.set(qn("w:type"), "fixed")
-
-        cell_margins = tbl_pr.find(qn("w:tblCellMar"))
-        if cell_margins is None:
-            cell_margins = OxmlElement("w:tblCellMar")
-            tbl_pr.append(cell_margins)
-        horizontal_margin = max(
-            0,
-            round(
-                20
-                * (
-                    source_layout.tabcolsep_pt
-                    if source_layout is not None
-                    and source_layout.tabcolsep_pt is not None
-                    else 6.0
-                )
-            ),
-        )
-        for edge, width in (
-            ("top", 80),
-            ("left", horizontal_margin),
-            ("bottom", 80),
-            ("right", horizontal_margin),
-        ):
-            margin = cell_margins.find(qn(f"w:{edge}"))
-            if margin is None:
-                margin = OxmlElement(f"w:{edge}")
-                cell_margins.append(margin)
-            margin.set(qn("w:type"), "dxa")
-            margin.set(qn("w:w"), str(width))
-
-        grid = table._tbl.tblGrid
-        grid_columns = list(grid.iterchildren(qn("w:gridCol")))
-        column_count = max(1, len(table.columns))
-        raw_widths = [int(column.get(qn("w:w"), "0")) for column in grid_columns]
-        if len(raw_widths) != column_count or sum(raw_widths) <= 0:
-            raw_widths = [1] * column_count
-            while len(grid_columns) < column_count:
-                column = OxmlElement("w:gridCol")
-                grid.append(column)
-                grid_columns.append(column)
-        if source_layout is not None and len(source_layout.columns) != column_count:
-            print(
-                "WARNING: LaTeX 表格列数与 Word 表格不一致，已回退到 Pandoc 列宽/对齐："
-                f"LaTeX={len(source_layout.columns)}, Word={column_count}",
-                file=sys.stderr,
-            )
-            source_layout = None
-        widths = _resolve_table_column_widths(source_layout, raw_widths, target_width)
-        for column, width in zip(grid_columns, widths):
-            column.set(qn("w:w"), str(width))
-
-        borders = tbl_pr.find(qn("w:tblBorders"))
-        if borders is None:
-            borders = OxmlElement("w:tblBorders")
-            tbl_pr.append(borders)
-        for edge, value, size in (
-            ("top", "single", "12"),
-            ("bottom", "single", "12"),
-            ("left", "nil", "0"),
-            ("right", "nil", "0"),
-            ("insideH", "nil", "0"),
-            ("insideV", "nil", "0"),
-        ):
-            node = borders.find(qn(f"w:{edge}"))
-            if node is None:
-                node = OxmlElement(f"w:{edge}")
-                borders.append(node)
-            node.set(qn("w:val"), value)
-            node.set(qn("w:sz"), size)
-            node.set(qn("w:color"), "000000")
-        for row_index, row in enumerate(table.rows):
-            tr_pr = row._tr.get_or_add_trPr()
-            if row_index == 0:
-                header = tr_pr.find(qn("w:tblHeader"))
-                if header is None:
-                    header = OxmlElement("w:tblHeader")
-                    header.set(qn("w:val"), "true")
-                    tr_pr.append(header)
-            else:
-                # Short rows remain atomic; rows containing substantial text
-                # are deliberately left splittable to avoid large white gaps.
-                text_length = sum(len(p.text) for c in row.cells for p in c.paragraphs)
-                if text_length < 160:
-                    cant_split = tr_pr.find(qn("w:cantSplit"))
-                    if cant_split is None:
-                        tr_pr.append(OxmlElement("w:cantSplit"))
-            grid_index = 0
-            for cell_xml in row._tr.findall(qn("w:tc")):
-                tc_pr = cell_xml.find(qn("w:tcPr"))
-                if tc_pr is None:
-                    tc_pr = OxmlElement("w:tcPr")
-                    cell_xml.insert(0, tc_pr)
-                grid_span = tc_pr.find(qn("w:gridSpan"))
-                span = int(grid_span.get(qn("w:val"), "1")) if grid_span is not None else 1
-                cell_width = sum(widths[grid_index : grid_index + span])
-                grid_index += span
-                tc_width = tc_pr.find(qn("w:tcW"))
-                if tc_width is None:
-                    tc_width = OxmlElement("w:tcW")
-                    tc_pr.append(tc_width)
-                tc_width.set(qn("w:type"), "dxa")
-                tc_width.set(qn("w:w"), str(cell_width))
-
-            seen_cells: set[int] = set()
-            for column_index, cell in enumerate(row.cells):
-                cell_key = id(cell._tc)
-                if cell_key in seen_cells:
-                    continue
-                seen_cells.add(cell_key)
-                source_column = (
-                    source_layout.columns[column_index]
-                    if source_layout is not None
-                    and column_index < len(source_layout.columns)
-                    else None
-                )
-                vertical = source_column.vertical if source_column is not None else "center"
-                cell.vertical_alignment = {
-                    "top": WD_CELL_VERTICAL_ALIGNMENT.TOP,
-                    "center": WD_CELL_VERTICAL_ALIGNMENT.CENTER,
-                    "bottom": WD_CELL_VERTICAL_ALIGNMENT.BOTTOM,
-                }.get(vertical, WD_CELL_VERTICAL_ALIGNMENT.CENTER)
-                if row_index == 0:
-                    tc_pr = cell._tc.get_or_add_tcPr()
-                    cell_borders = tc_pr.find(qn("w:tcBorders"))
-                    if cell_borders is None:
-                        cell_borders = OxmlElement("w:tcBorders")
-                        tc_pr.append(cell_borders)
-                    bottom = cell_borders.find(qn("w:bottom"))
-                    if bottom is None:
-                        bottom = OxmlElement("w:bottom")
-                        cell_borders.append(bottom)
-                    bottom.set(qn("w:val"), "single")
-                    bottom.set(qn("w:sz"), "8")
-                    bottom.set(qn("w:color"), "000000")
-                for paragraph in cell.paragraphs:
-                    source_alignment = paragraph.alignment
-                    tc_pr = cell._tc.get_or_add_tcPr()
-                    grid_span = tc_pr.find(qn("w:gridSpan"))
-                    is_merged_cell = (
-                        grid_span is not None
-                        and int(grid_span.get(qn("w:val"), "1")) > 1
-                    )
-                    if source_column is not None and not is_merged_cell:
-                        # For ordinary cells the LaTeX preamble is the source
-                        # of truth.  Pandoc may leave direct paragraph
-                        # alignment behind while converting the simplified
-                        # l/c/r preamble; do not let that incidental OOXML
-                        # override L/C/R/X or p/m/b column semantics.
-                        horizontal = source_column.horizontal
-                    elif source_alignment == WD_ALIGN_PARAGRAPH.CENTER:
-                        horizontal = "center"
-                    elif source_alignment == WD_ALIGN_PARAGRAPH.RIGHT:
-                        horizontal = "right"
-                    elif source_alignment == WD_ALIGN_PARAGRAPH.LEFT:
-                        horizontal = "left"
-                    else:
-                        horizontal = "left"
-                    paragraph.style = document.styles[
-                        _table_style_for_alignment(row_index, horizontal)
-                    ]
-                    _clear_direct_paragraph_format(
-                        paragraph,
-                        "ind",
-                        "spacing",
-                        "jc",
-                    )
-                    if (
-                        source_column is not None
-                        and source_column.first_line_indent_pt is not None
-                        and source_column.first_line_indent_pt != 0
-                    ):
-                        paragraph.paragraph_format.first_line_indent = Pt(
-                            source_column.first_line_indent_pt
-                        )
-                    for run in paragraph.runs:
-                        _clear_direct_run_typography(run)
-
-    if layouts and (
-        semantic_table_count != len(layouts) or len(used_layout_ids) != len(layouts)
-    ):
-        print(
-            "WARNING: LaTeX 表格布局数量与 Word 语义表格数量不一致，"
-            f"LaTeX={len(layouts)}, Word={semantic_table_count}, "
-            f"matched={len(used_layout_ids)}；未匹配表格已使用 Pandoc 回退。",
-            file=sys.stderr,
-        )
-
-
-def _clamp_images(document: Document) -> None:
-    maximum_width = int(15.5 * 360000)  # 15.5 cm usable width in EMU.
-    for inline in document.element.iter(qn("wp:inline")):
-        extent = inline.find(qn("wp:extent"))
-        if extent is None:
-            continue
-        width = int(extent.get("cx", "0"))
-        height = int(extent.get("cy", "0"))
-        if width <= maximum_width or width <= 0:
-            continue
-        scale = maximum_width / width
-        new_width = maximum_width
-        new_height = max(1, int(height * scale))
-        extent.set("cx", str(new_width))
-        extent.set("cy", str(new_height))
-        for drawing_extent in inline.iter(qn("a:ext")):
-            drawing_extent.set("cx", str(new_width))
-            drawing_extent.set("cy", str(new_height))
-
-
-def _format_images_and_captions(
-    document: Document,
-    labels: LabelRegistry | None = None,
-    discipline: str = "science",
-    *,
-    figure_sequence: str = "图",
-    table_sequence: str = "表",
-) -> None:
-    """Apply Word-style-driven layout to embedded figures and captions."""
-
+        STYLE_UNNUMBERED_HEADING,
+        STYLE_FRONT_TITLE,
+        STYLE_ENGLISH_ABSTRACT_TITLE,
+        STYLE_TOC_TITLE,
+        STYLE_APPENDIX_HEADING,
+        STYLE_APPENDIX_SECTION,
+    }
     for paragraph in document.paragraphs:
-        has_drawing = bool(paragraph._p.xpath(".//w:drawing|.//w:pict"))
-        if has_drawing and paragraph.style.name not in {"CoverLogo"}:
-            paragraph.style = document.styles[STYLE_FIGURE]
-            _clear_direct_paragraph_format(
-                paragraph,
-                "keepNext",
-                "keepLines",
-                "spacing",
-                "ind",
-                "jc",
-            )
-
-        style_name = paragraph.style.name
-        text = paragraph.text.strip()
-        if style_name not in {
-            "Caption",
-            "Image Caption",
-            "Figure Caption",
-            "Table Caption",
-            STYLE_FIGURE_CAPTION,
-            STYLE_TABLE_CAPTION,
-        }:
+        if paragraph.style.name not in title_styles:
             continue
-        is_table_caption = text.startswith("表")
-        # The reusable thesis styles inherit Word's built-in Caption style,
-        # while keeping table-vs-figure pagination explicit and editable.
-        paragraph.style = document.styles[
-            STYLE_TABLE_CAPTION if is_table_caption else STYLE_FIGURE_CAPTION
-        ]
         _clear_direct_paragraph_format(
             paragraph,
             "keepNext",
             "keepLines",
+            "pageBreakBefore",
             "spacing",
             "ind",
             "jc",
         )
         for run in paragraph.runs:
-            _clear_title_run_typography(run)
+            _clear_direct_run_typography(run)
 
-    _promote_caption_fields(
+    _format_tables(document, table_layouts, labels)
+    _replace_pandoc_checkbox_math(document)
+    _clamp_images(document)
+    _format_images_and_captions(
         document,
         labels,
         discipline,
-        figure_sequence=figure_sequence,
-        table_sequence=table_sequence,
+        figure_sequence=word_figure_sequence,
+        table_sequence=word_table_sequence,
     )
-
-    for blip in document.element.iter(qn("a:blip")):
-        if blip.get(qn("r:link")):
-            raise BuildError("检测到 Word 图片外链；模板只允许内嵌图片关系。")
-
-
-def _word_field_identifier(value: str) -> str:
-    value = value.strip()
-    if not value:
-        raise BuildError("Word 题注序列名不能为空。")
-    if re.fullmatch(r'[^\s"\\]+', value):
-        return value
-    return '"' + value.replace('"', '""') + '"'
-
-
-def _field_run(
-    instruction: str,
-    result: str = "",
-    *,
-    locked: bool = False,
-):
-    field = OxmlElement("w:fldSimple")
-    field.set(qn("w:instr"), instruction)
-    field.set(qn("w:dirty"), "true")
-    if locked:
-        field.set(qn("w:fldLock"), "true")
-    run = OxmlElement("w:r")
-    text = OxmlElement("w:t")
-    text.text = result
-    run.append(text)
-    field.append(run)
-    return field
-
-
-def _promote_caption_fields(
-    document: Document,
-    labels: LabelRegistry | None = None,
-    discipline: str = "science",
-    *,
-    figure_sequence: str = "图",
-    table_sequence: str = "表",
-) -> None:
-    """Turn Pandoc caption text into native Word caption sequences.
-
-    The visible Chinese label and the registered Word CaptionLabel identifier
-    intentionally match.  This keeps generated captions, Word's Insert Caption
-    dialog and the Cross-reference dialog on the same ``图``/``表`` sequence.
-    """
-
-    bookmark_id = _next_bookmark_id(document)
-    for paragraph in document.paragraphs:
-        text = paragraph.text.strip()
-        match = re.match(r"^(图|表)([0-9]+(?:\.[0-9]+)?)\s*(.*)$", text)
-        if not match or paragraph.style.name not in {
-            "Figure Caption",
-            "Table Caption",
-            "Caption",
-            "Image Caption",
-            STYLE_FIGURE_CAPTION,
-            STYLE_TABLE_CAPTION,
-        }:
-            continue
-        kind, number, rest = match.groups()
-        # Rebuild paragraph while retaining its caption style and formatting.
-        for child in list(paragraph._p):
-            if child.tag != qn("w:pPr"):
-                paragraph._p.remove(child)
-        chapter_number = ""
-        sequence_number = number
-        sequence_name = figure_sequence if kind == "图" else table_sequence
-        if discipline == "science" and "." in number:
-            chapter, sequence_number = number.split(".", 1)
-            chapter_number = chapter
-
-        matched = next(
-            (
-                label
-                for label, target in (labels.targets.items() if labels else [])
-                if target.kind == kind and target.number == number
-            ),
-            None,
-        )
-        seed = matched or f"anonymous:{kind}:{number}:{bookmark_id}"
-        full_name = (
-            _label_bookmark_name(matched)
-            if matched
-            else _hidden_ref_bookmark_name(f"full:{seed}")
-        )
-        number_name = (
-            _label_number_bookmark_name(matched)
-            if matched
-            else _hidden_ref_bookmark_name(f"number:{seed}", prefix="_RefNum")
-        )
-        full_id = bookmark_id
-        number_id = bookmark_id + 1
-        bookmark_id += 2
-
-        full_start = OxmlElement("w:bookmarkStart")
-        full_start.set(qn("w:id"), str(full_id))
-        full_start.set(qn("w:name"), full_name)
-        full_end = OxmlElement("w:bookmarkEnd")
-        full_end.set(qn("w:id"), str(full_id))
-        number_start = OxmlElement("w:bookmarkStart")
-        number_start.set(qn("w:id"), str(number_id))
-        number_start.set(qn("w:name"), number_name)
-        number_end = OxmlElement("w:bookmarkEnd")
-        number_end.set(qn("w:id"), str(number_id))
-
-        paragraph._p.append(full_start)
-        paragraph._p.append(_plain_run(kind))
-        paragraph._p.append(number_start)
-        if chapter_number:
-            for node in _complex_field_runs(
-                f' STYLEREF "{STYLE_HEADING_1}" \\n ',
-                chapter_number,
-            ):
-                paragraph._p.append(node)
-            paragraph._p.append(_plain_run("."))
-        sequence_instruction = f" SEQ {_word_field_identifier(sequence_name)} "
-        if sequence_number == "1":
-            sequence_instruction += "\\r 1 "
-        sequence_instruction += "\\* ARABIC "
-        for node in _complex_field_runs(sequence_instruction, sequence_number):
-            paragraph._p.append(node)
-        paragraph._p.append(number_end)
-        paragraph._p.append(full_end)
-        if rest:
-            paragraph._p.append(_plain_run(" " + rest))
-
-
-def _label_bookmark_name(label: str) -> str:
-    return _hidden_ref_bookmark_name(f"full:{label}")
-
-
-def _label_number_bookmark_name(label: str) -> str:
-    return _hidden_ref_bookmark_name(f"number:{label}", prefix="_RefNum")
-
-
-def _hidden_ref_bookmark_name(seed: str, *, prefix: str = "_Ref") -> str:
-    """Return a deterministic hidden bookmark that resembles Word's own.
-
-    Leading underscores keep the target out of Word's normal bookmark list.
-    A decimal digest is used because native cross-reference bookmarks are
-    conventionally named ``_Ref#########``.
-    """
-
-    digest = int(hashlib.sha1(seed.encode("utf-8")).hexdigest()[:15], 16)
-    return f"{prefix}{digest % 10**15:015d}"
-
-
-def _next_bookmark_id(document: Document) -> int:
-    values = [
-        int(value)
-        for node in document.element.iter(qn("w:bookmarkStart"))
-        if (value := node.get(qn("w:id"))) is not None and value.isdigit()
-    ]
-    return max(values, default=0) + 1
-
-
-def _citation_bookmark_name(key: str) -> str:
-    safe = re.sub(r"[^A-Za-z0-9_]", "_", key or "")[:17]
-    digest = hashlib.sha1((key or "").encode("utf-8")).hexdigest()[:8]
-    return f"YibinCitation_{safe}_{digest}"
-
-
-def _run_style_properties(character_style_id: str | None):
-    if not character_style_id:
-        return None
-    r_pr = OxmlElement("w:rPr")
-    r_style = OxmlElement("w:rStyle")
-    r_style.set(qn("w:val"), character_style_id)
-    r_pr.append(r_style)
-    return r_pr
-
-
-def _plain_run(text: str, *, character_style_id: str | None = None):
-    run = OxmlElement("w:r")
-    r_pr = _run_style_properties(character_style_id)
-    if r_pr is not None:
-        run.append(r_pr)
-    node = OxmlElement("w:t")
-    if text.startswith(" ") or text.endswith(" "):
-        node.set(qn("xml:space"), "preserve")
-    node.text = text
-    run.append(node)
-    return run
-
-
-def _complex_field_runs(
-    instruction: str,
-    result: str,
-    *,
-    character_style_id: str | None = None,
-    locked: bool = False,
-) -> list:
-    """Return a schema-valid complex field whose result keeps its style.
-
-    Word recreates an unlocked REF result during F9.  CHARFORMAT reapplies the
-    character style carried by the field-code runs, so the citation number
-    remains a 9 pt superscript after refresh instead of dropping to baseline.
-    """
-
-    def styled_run(child):
-        run = OxmlElement("w:r")
-        r_pr = _run_style_properties(character_style_id)
-        if r_pr is not None:
-            run.append(r_pr)
-        run.append(child)
-        return run
-
-    begin = OxmlElement("w:fldChar")
-    begin.set(qn("w:fldCharType"), "begin")
-    begin.set(qn("w:dirty"), "true")
-    if locked:
-        begin.set(qn("w:fldLock"), "true")
-    code = OxmlElement("w:instrText")
-    code.set(qn("xml:space"), "preserve")
-    code.text = instruction
-    separate = OxmlElement("w:fldChar")
-    separate.set(qn("w:fldCharType"), "separate")
-    text = OxmlElement("w:t")
-    text.text = result
-    end = OxmlElement("w:fldChar")
-    end.set(qn("w:fldCharType"), "end")
-    return [
-        styled_run(begin),
-        styled_run(code),
-        styled_run(separate),
-        styled_run(text),
-        styled_run(end),
-    ]
-
-
-def _replace_reference_markers(document: Document, labels: LabelRegistry, citations: CitationRegistry, mode: str) -> None:
-    """Replace opaque LaTeX reference/citation markers with Word fields."""
-    label_names = {label: _label_bookmark_name(label) for label in labels.targets}
-    label_number_names = {
-        label: _label_number_bookmark_name(label) for label in labels.targets
-    }
-    citation_names = {key: _citation_bookmark_name(key) for key in citations.order}
-    citation_numbers = {
-        key: index for index, key in enumerate(citations.order, start=1)
-    }
-    generated_names = [
-        *label_names.values(),
-        *label_number_names.values(),
-        *citation_names.values(),
-    ]
-    if any(len(name) > 40 for name in generated_names):
-        raise BuildError("Word 书签名超过 40 字符限制。")
-    folded_names = [name.casefold() for name in generated_names]
-    if len(folded_names) != len(set(folded_names)):
-        raise BuildError("Word 书签名发生大小写不敏感碰撞。")
-    citation_style_id = document.styles[STYLE_CITATION].style_id
-    for paragraph in document.paragraphs:
-        for run in list(paragraph.runs):
-            value = run.text or ""
-            markers = list(re.finditer(r"YIBINXREF\d{8}|YIBINCITE\d{8}", value))
-            if not markers:
-                continue
-            parent = run._r.getparent(); index = parent.index(run._r)
-            parent.remove(run._r)
-            cursor = 0
-            for match in markers:
-                token = match.group(0)
-                if token.startswith("YIBINXREF"):
-                    label, paren = labels.references.get(token, ("", False)); target = labels.targets.get(label)
-                    if target is None: raise BuildError(f"未找到交叉引用标签：{label}")
-                    prefix = value[cursor:match.start()]
-                    use_full_target = bool(paren and target.kind == "公式")
-                    if not paren and target.kind in {"图", "表"} and prefix.endswith(target.kind):
-                        prefix = prefix[: -len(target.kind)]
-                        use_full_target = True
-                    if prefix:
-                        parent.insert(index, _plain_run(prefix)); index += 1
-                    bookmark = (
-                        label_names[label]
-                        if use_full_target
-                        else label_number_names[label]
-                    )
-                    if use_full_target and target.kind in {"图", "表"}:
-                        cached_result = f"{target.kind}{target.number}"
-                    elif use_full_target and target.kind == "公式":
-                        cached_result = f"({target.number})"
-                    else:
-                        cached_result = (
-                            f"({target.number})" if paren else target.number
-                        )
-                    for field_run in _complex_field_runs(
-                        f" REF {bookmark} \\h ",
-                        cached_result,
-                    ):
-                        parent.insert(index, field_run)
-                        index += 1
-                else:
-                    prefix = value[cursor:match.start()]
-                    if prefix:
-                        parent.insert(index, _plain_run(prefix)); index += 1
-                    keys = sorted(
-                        citations.clusters.get(token, []),
-                        key=lambda key: citation_numbers[key],
-                    )
-                    open_run = _plain_run("[", character_style_id=citation_style_id)
-                    parent.insert(index, open_run); index += 1
-                    for key_index, key in enumerate(keys):
-                        if key_index:
-                            sep = copy.deepcopy(open_run); sep.find(qn("w:t")).text = ","; parent.insert(index, sep); index += 1
-                        number = citation_numbers[key]
-                        instruction = (
-                            f" CITATION {key} \\l 2052 \\* CHARFORMAT "
-                            if mode == "native"
-                            else f" REF {citation_names[key]} \\h \\* CHARFORMAT "
-                        )
-                        for field_run in _complex_field_runs(
-                            instruction,
-                            str(number),
-                            character_style_id=citation_style_id,
-                            locked=mode == "native",
-                        ):
-                            parent.insert(index, field_run)
-                            index += 1
-                    close_run = copy.deepcopy(open_run); close_run.find(qn("w:t")).text = "]"; parent.insert(index, close_run); index += 1
-                cursor = match.end()
-            if cursor < len(value):
-                parent.insert(index, _plain_run(value[cursor:]))
-    # Bookmark bibliography entries by citation order where possible.
-    for paragraph in document.paragraphs:
-        if paragraph.style.name.casefold() not in {
-            "bibliography",
-            STYLE_BIBLIOGRAPHY.casefold(),
-        }:
-            continue
-        m = re.match(r"^\s*\[?(\d+)\]?\s*", paragraph.text or "")
-        if not m: continue
-        number = int(m.group(1))
-        if 1 <= number <= len(citations.order):
-            key = citations.order[number - 1]; bid = 3000 + number
-            # Isolate the displayed number so REF returns only the number,
-            # never the complete bibliography entry.
-            first = paragraph.runs[0] if paragraph.runs else None
-            number_run = None
-            first_match = (
-                re.match(r"^(\s*)\[?\d+\]?", first.text)
-                if first is not None
-                else None
-            )
-            if first is not None and first_match is not None:
-                leading = first_match.group(1)
-                remainder = first.text[first_match.end():]
-                parent = first._r.getparent()
-                position = parent.index(first._r)
-                r_pr = first._r.find(qn("w:rPr"))
-                parent.remove(first._r)
-                pieces = (leading + "[", str(number), "]" + remainder)
-                created = []
-                for piece in pieces:
-                    node = OxmlElement("w:r")
-                    if r_pr is not None:
-                        node.append(copy.deepcopy(r_pr))
-                    text_node = OxmlElement("w:t")
-                    if piece.startswith(" ") or piece.endswith(" "):
-                        text_node.set(qn("xml:space"), "preserve")
-                    text_node.text = piece
-                    node.append(text_node)
-                    parent.insert(position, node)
-                    position += 1
-                    created.append(node)
-                number_run = created[1]
-            start = OxmlElement("w:bookmarkStart"); start.set(qn("w:id"), str(bid)); start.set(qn("w:name"), citation_names[key])
-            end = OxmlElement("w:bookmarkEnd"); end.set(qn("w:id"), str(bid))
-            if number_run is not None:
-                pos = paragraph._p.index(number_run)
-                paragraph._p.insert(pos, start)
-                paragraph._p.insert(pos + 2, end)
-            else:
-                raise BuildError(f"无法隔离参考文献编号书签：{paragraph.text[:80]}")
-
-
-def _word_source_type(csl_type: str) -> str:
-    return {
-        "article-journal": "JournalArticle",
-        "article-magazine": "ArticleInAPeriodical",
-        "article-newspaper": "ArticleInAPeriodical",
-        "book": "Book",
-        "chapter": "BookSection",
-        "paper-conference": "ConferenceProceedings",
-        "report": "Report",
-        "thesis": "Report",
-        "webpage": "DocumentFromInternetSite",
-        "post-weblog": "InternetSite",
-        "patent": "Patent",
-    }.get(csl_type, "Misc")
-
-
-def _append_word_source_text(source: ET.Element, name: str, value: object) -> None:
-    text = str(value or "").strip()
-    if not text:
-        return
-    ET.SubElement(source, f"{{{BIBLIOGRAPHY_NS}}}{name}").text = text
-
-
-BIBLIOGRAPHY_NS = "http://schemas.openxmlformats.org/officeDocument/2006/bibliography"
-CUSTOM_XML_NS = "http://schemas.openxmlformats.org/officeDocument/2006/customXml"
-PACKAGE_REL_NS = "http://schemas.openxmlformats.org/package/2006/relationships"
-CONTENT_TYPES_NS = "http://schemas.openxmlformats.org/package/2006/content-types"
-
-
-def _bibliography_sources_xml(
-    citations: CitationRegistry,
-    bibliography_items: list[dict[str, object]],
-) -> bytes:
-    ET.register_namespace("b", BIBLIOGRAPHY_NS)
-    by_key = {str(item.get("id", "")): item for item in bibliography_items}
-    root = ET.Element(
-        f"{{{BIBLIOGRAPHY_NS}}}Sources",
-        {
-            "SelectedStyle": "\\Yibin-GB-T-7714-Numeric.xsl",
-            "StyleName": "GB/T 7714 数字引用（YibinThesis）",
-            "Version": "6",
-        },
-    )
-    for number, key in enumerate(citations.order, start=1):
-        item = by_key.get(key, {})
-        source = ET.SubElement(root, f"{{{BIBLIOGRAPHY_NS}}}Source")
-        _append_word_source_text(source, "Tag", key)
-        _append_word_source_text(source, "SourceType", _word_source_type(str(item.get("type", ""))))
-        _append_word_source_text(
-            source,
-            "Guid",
-            "{" + str(uuid.uuid5(uuid.NAMESPACE_URL, f"yibinthesis:{key}")).upper() + "}",
-        )
-        _append_word_source_text(source, "LCID", "2052")
-        _append_word_source_text(source, "RefOrder", number)
-
-        authors = item.get("author")
-        if isinstance(authors, list) and authors:
-            author_node = ET.SubElement(source, f"{{{BIBLIOGRAPHY_NS}}}Author")
-            author_role = ET.SubElement(author_node, f"{{{BIBLIOGRAPHY_NS}}}Author")
-            people = [author for author in authors if isinstance(author, dict) and not author.get("literal")]
-            corporate = [str(author.get("literal", "")).strip() for author in authors if isinstance(author, dict) and author.get("literal")]
-            if people:
-                name_list = ET.SubElement(author_role, f"{{{BIBLIOGRAPHY_NS}}}NameList")
-                for author in people:
-                    person = ET.SubElement(name_list, f"{{{BIBLIOGRAPHY_NS}}}Person")
-                    _append_word_source_text(person, "Last", author.get("family"))
-                    _append_word_source_text(person, "First", author.get("given"))
-            elif corporate:
-                _append_word_source_text(author_role, "Corporate", "；".join(corporate))
-
-        title = item.get("title") or key
-        _append_word_source_text(source, "Title", title)
-        container = item.get("container-title")
-        if isinstance(container, list):
-            container = "; ".join(str(value) for value in container)
-        _append_word_source_text(source, "JournalName", container)
-        issued = item.get("issued")
-        if isinstance(issued, dict):
-            date_parts = issued.get("date-parts")
-            if isinstance(date_parts, list) and date_parts and isinstance(date_parts[0], list):
-                parts = date_parts[0]
-                if parts:
-                    _append_word_source_text(source, "Year", parts[0])
-                if len(parts) > 1:
-                    _append_word_source_text(source, "Month", parts[1])
-                if len(parts) > 2:
-                    _append_word_source_text(source, "Day", parts[2])
-        for csl_name, word_name in (
-            ("publisher", "Publisher"),
-            ("publisher-place", "City"),
-            ("volume", "Volume"),
-            ("issue", "Issue"),
-            ("page", "Pages"),
-            ("DOI", "DOI"),
-            ("URL", "URL"),
-            ("number", "StandardNumber"),
-        ):
-            _append_word_source_text(source, word_name, item.get(csl_name))
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True)
-
-
-def _inject_bibliography_sources(
-    docx_path: Path,
-    citations: CitationRegistry,
-    bibliography_items: list[dict[str, object]],
-) -> None:
-    """Add a fully related Word bibliography custom XML data store."""
-    if not citations.order:
-        return
-    temp = docx_path.with_suffix(".sources.docx")
-    with zipfile.ZipFile(docx_path, "r") as src:
-        names = set(src.namelist())
-        index = 1
-        while f"customXml/item{index}.xml" in names:
-            index += 1
-        item_name = f"customXml/item{index}.xml"
-        props_name = f"customXml/itemProps{index}.xml"
-        item_rels_name = f"customXml/_rels/item{index}.xml.rels"
-
-        document_rels = ET.fromstring(src.read("word/_rels/document.xml.rels"))
-        relationship_ids = {
-            relationship.get("Id", "") for relationship in document_rels
-        }
-        rel_index = 1
-        while f"rIdYibinBibliography{rel_index}" in relationship_ids:
-            rel_index += 1
-        ET.SubElement(
-            document_rels,
-            f"{{{PACKAGE_REL_NS}}}Relationship",
-            {
-                "Id": f"rIdYibinBibliography{rel_index}",
-                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXml",
-                "Target": f"../{item_name}",
-            },
-        )
-
-        content_types = ET.fromstring(src.read("[Content_Types].xml"))
-        ET.SubElement(
-            content_types,
-            f"{{{CONTENT_TYPES_NS}}}Override",
-            {
-                "PartName": "/" + props_name,
-                "ContentType": "application/vnd.openxmlformats-officedocument.customXmlProperties+xml",
-            },
-        )
-
-        store_id = "{" + str(uuid.uuid5(uuid.NAMESPACE_URL, "yibinthesis:bibliography-store")).upper() + "}"
-        ET.register_namespace("ds", CUSTOM_XML_NS)
-        props = ET.Element(f"{{{CUSTOM_XML_NS}}}datastoreItem", {f"{{{CUSTOM_XML_NS}}}itemID": store_id})
-        schema_refs = ET.SubElement(props, f"{{{CUSTOM_XML_NS}}}schemaRefs")
-        ET.SubElement(schema_refs, f"{{{CUSTOM_XML_NS}}}schemaRef", {f"{{{CUSTOM_XML_NS}}}uri": BIBLIOGRAPHY_NS})
-
-        ET.register_namespace("", PACKAGE_REL_NS)
-        item_rels = ET.Element(f"{{{PACKAGE_REL_NS}}}Relationships")
-        ET.SubElement(
-            item_rels,
-            f"{{{PACKAGE_REL_NS}}}Relationship",
-            {
-                "Id": "rId1",
-                "Type": "http://schemas.openxmlformats.org/officeDocument/2006/relationships/customXmlProps",
-                "Target": f"itemProps{index}.xml",
-            },
-        )
-
-        replacements = {
-            "word/_rels/document.xml.rels": ET.tostring(document_rels, encoding="utf-8", xml_declaration=True),
-            "[Content_Types].xml": ET.tostring(content_types, encoding="utf-8", xml_declaration=True),
-        }
-        with zipfile.ZipFile(temp, "w") as dst:
-            for member in src.infolist():
-                dst.writestr(member, replacements.get(member.filename, src.read(member)))
-            dst.writestr(item_name, _bibliography_sources_xml(citations, bibliography_items))
-            dst.writestr(props_name, ET.tostring(props, encoding="utf-8", xml_declaration=True))
-            dst.writestr(item_rels_name, ET.tostring(item_rels, encoding="utf-8", xml_declaration=True))
-    os.replace(temp, docx_path)
+    _replace_reference_markers(document, labels, citations, citation_mode)
+    return heading_abstract_id
 
 
 def postprocess_docx(
@@ -3800,6 +2425,7 @@ def postprocess_docx(
     word_equation_sequence: str = "公式",
 ) -> None:
     document = Document(input_docx)
+    _require_independent_heading_styles(document)
     labels = labels or LabelRegistry()
     citations = citations or CitationRegistry()
     bibliography_items = bibliography_items or []
@@ -3850,6 +2476,8 @@ def postprocess_docx(
     abstract_marker = None
     front_marker = None
     toc_paragraph = None
+    lof_paragraph = None
+    lot_paragraph = None
     for paragraph in document.paragraphs:
         value = paragraph.text.strip()
         if value == SECTION_COVER_END:
@@ -3860,6 +2488,10 @@ def postprocess_docx(
             front_marker = paragraph
         elif value == TOC_MARKER:
             toc_paragraph = paragraph
+        elif value == LOF_MARKER:
+            lof_paragraph = paragraph
+        elif value == LOT_MARKER:
+            lot_paragraph = paragraph
     if (
         cover_marker is None
         or abstract_marker is None
@@ -3893,6 +2525,14 @@ def postprocess_docx(
     toc_paragraph.text = "目录"
     toc_paragraph.style = document.styles[STYLE_TOC_TITLE]
     _insert_toc_after(toc_paragraph)
+    if lof_paragraph is not None:
+        lof_paragraph.text = "图目录"
+        lof_paragraph.style = document.styles[STYLE_TOC_TITLE]
+        _insert_caption_list_after(lof_paragraph, word_figure_sequence)
+    if lot_paragraph is not None:
+        lot_paragraph.text = "表目录"
+        lot_paragraph.style = document.styles[STYLE_TOC_TITLE]
+        _insert_caption_list_after(lot_paragraph, word_table_sequence)
     _add_section_break(cover_marker, body_sect_pr, None)
     _add_section_break(abstract_marker, body_sect_pr, "upperRoman")
     _add_section_break(front_marker, body_sect_pr, None)
@@ -3983,6 +2623,8 @@ def postprocess_docx(
             if paragraph.style.name in reusable_style_map.values():
                 _clear_direct_run_typography(run)
 
+    _apply_list_paragraph_styles(document)
+
     heading_one = document.styles[STYLE_HEADING_1]
     if discipline == "science":
         heading_one.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -3996,7 +2638,7 @@ def postprocess_docx(
     else:
         heading_one.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
         heading_one.paragraph_format.first_line_indent = Pt(24)
-        heading_one.paragraph_format.page_break_before = False
+        heading_one.paragraph_format.page_break_before = True
         heading_ppr = heading_one.element.get_or_add_pPr()
         heading_indent = heading_ppr.find(qn("w:ind"))
         if heading_indent is None:
@@ -4012,10 +2654,17 @@ def postprocess_docx(
         text = paragraph.text.strip()
         if paragraph.style.name == STYLE_HEADING_1 and text in unnumbered_titles:
             paragraph.style = document.styles[STYLE_UNNUMBERED_HEADING]
+            _clear_paragraph_numbering(paragraph)
         if re.match(r"^附录[A-ZＡ-Ｚ0-9一二三四五六七八九十]+(?:\s|　)", text):
             paragraph.style = document.styles[STYLE_APPENDIX_HEADING]
 
-    _configure_heading_numbering(document, discipline)
+    heading_abstract_id = _configure_heading_numbering(document, discipline)
+    if discipline == "humanities":
+        _isolate_humanities_introduction_numbering(
+            document,
+            heading_abstract_id,
+        )
+    _configure_appendix_section_numbering(document, discipline)
 
     # All semantic section titles are style-driven.  Pandoc may leave direct
     # paragraph/run formatting on headings even after assigning a named style;
@@ -4031,6 +2680,7 @@ def postprocess_docx(
         STYLE_ENGLISH_ABSTRACT_TITLE,
         STYLE_TOC_TITLE,
         STYLE_APPENDIX_HEADING,
+        STYLE_APPENDIX_SECTION,
     }
     for paragraph in document.paragraphs:
         if paragraph.style.name not in title_styles:
@@ -4048,6 +2698,7 @@ def postprocess_docx(
             _clear_direct_run_typography(run)
 
     _format_tables(document, table_layouts, labels)
+    _replace_pandoc_checkbox_math(document)
     _clamp_images(document)
     _format_images_and_captions(
         document,
@@ -4070,6 +2721,9 @@ def postprocess_docx(
     if english_title.strip():
         subject += " / " + english_title.strip()
     document.core_properties.subject = subject
+    document.core_properties.keywords = (
+        "YibinThesis;document-type=thesis;template-year=2024"
+    )
     if citation_mode not in {"linked", "native"}:
         raise BuildError(f"不支持的 Word citation mode：{citation_mode}")
     output_docx.parent.mkdir(parents=True, exist_ok=True)
@@ -4095,6 +2749,23 @@ def postprocess_docx(
         raise BuildError("Word 后处理标记未清理：" + ", ".join(sorted(residual)))
 
 
+def _profiles_module():
+    import word_profiles
+    return word_profiles.bind_core(sys.modules[__name__])
+
+
+def _postprocess_proposal_docx(*args, **kwargs):
+    return _profiles_module()._postprocess_proposal_docx(*args, **kwargs)
+
+
+def _postprocess_review_docx(*args, **kwargs):
+    return _profiles_module()._postprocess_review_docx(*args, **kwargs)
+
+
+def _build_non_thesis(*args, **kwargs):
+    return _profiles_module()._build_non_thesis(*args, **kwargs)
+
+
 def _resolve_argument_path(value: str | Path, project_root: Path) -> Path:
     path = Path(value).expanduser()
     if not path.is_absolute():
@@ -4113,7 +2784,6 @@ def build(args: argparse.Namespace) -> Path:
     allow_project_fallback = path_is_within(main_path, project_root)
     main_text = main_path.read_text(encoding="utf-8")
     events = parse_main_events(main_text)
-    discipline = parse_discipline(main_text)
 
     metadata_path: Path | None = None
     if args.metadata:
@@ -4138,11 +2808,13 @@ def build(args: argparse.Namespace) -> Path:
     if metadata_path is None or not metadata_path.is_file():
         raise BuildError("未找到 metadata.tex；可用 --metadata 显式指定。")
     metadata = parse_metadata(metadata_path)
+    profile = resolve_profile(main_text, metadata)
+    discipline = profile.discipline
 
     pandoc = find_pandoc(args.pandoc, project_root)
     reference_doc = _resolve_argument_path(args.reference_doc, project_root)
     if not reference_doc.is_file():
-        generator = project_root / "tools" / "build_reference_docx.py"
+        generator = project_root / "lib" / "build_reference_docx.py"
         run_checked(
             [sys.executable, str(generator), "--output", str(reference_doc)],
             cwd=project_root,
@@ -4181,6 +2853,24 @@ def build(args: argparse.Namespace) -> Path:
     )
     if output.resolve() == reference_doc.resolve():
         raise BuildError("输出文件不能覆盖 word/reference.docx。")
+
+    if profile.document_type != "thesis":
+        return _build_non_thesis(
+            args,
+            profile=profile,
+            project_root=project_root,
+            main_path=main_path,
+            main_text=main_text,
+            main_dir=main_dir,
+            metadata_path=metadata_path,
+            metadata=metadata,
+            pandoc=pandoc,
+            reference_doc=reference_doc,
+            csl=csl,
+            bibliography=bibliography,
+            output=output,
+            allow_project_fallback=allow_project_fallback,
+        )
 
     warnings: list[str] = []
     notes = NoteRegistry()
@@ -4299,6 +2989,14 @@ def build(args: argparse.Namespace) -> Path:
                 markdown_parts.append(styled_marker(TOC_MARKER))
                 abstract_section_closed = True
                 front_has_content = True
+            elif event.kind == "listoffigures":
+                markdown_parts.append(PAGE_BREAK)
+                markdown_parts.append(styled_marker(LOF_MARKER))
+                front_has_content = True
+            elif event.kind == "listoftables":
+                markdown_parts.append(PAGE_BREAK)
+                markdown_parts.append(styled_marker(LOT_MARKER))
+                front_has_content = True
         if not any(event.kind == "tableofcontents" for event in front_events):
             markdown_parts.append(styled_marker(SECTION_ABSTRACT_END))
             markdown_parts.append(styled_marker(TOC_MARKER))
@@ -4359,17 +3057,22 @@ def build(args: argparse.Namespace) -> Path:
                 rendered_notes = notes_markdown(notes)
                 if rendered_notes:
                     markdown_parts.append(rendered_notes)
+            elif event.kind == "nocite" and event.value:
+                citations.add_nocite(event.value)
             elif event.kind == "printyibinbibliography":
                 seed = citation_seed_markdown(citations)
                 if seed:
                     markdown_parts.append(seed)
+                markdown_parts.append(styled_marker(SECTION_REVIEW_REFERENCES))
                 markdown_parts.append(bibliography_markdown())
                 bibliography_inserted = True
         if not bibliography_inserted:
             seed = citation_seed_markdown(citations)
             if seed:
                 markdown_parts.append(seed)
+            markdown_parts.append(styled_marker(SECTION_REVIEW_REFERENCES))
             markdown_parts.append(bibliography_markdown())
+        markdown_parts.append(styled_marker(SECTION_REVIEW_TAIL))
 
         assembled = "\n\n".join(part for part in markdown_parts if part.strip()) + "\n"
         assembled = labels.resolve(assembled)
@@ -4449,8 +3152,8 @@ def make_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--main",
-        default=str(project_root / "main.tex"),
-        help="LaTeX entry point; examples may provide their own main.tex.",
+        required=True,
+        help="LaTeX entry point from an external consumer project.",
     )
     parser.add_argument("--metadata", help="Override metadata.tex path.")
     parser.add_argument("--bibliography", help="Override BibTeX database path.")

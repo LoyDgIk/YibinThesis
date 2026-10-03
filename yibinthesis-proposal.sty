@@ -1,0 +1,239 @@
+% !TeX root = main.tex
+\NeedsTeXFormat{LaTeX2e}[2020-10-01]
+\ProvidesPackage{yibinthesis-proposal}
+  [2026/07/18 v0.1 Yibin University opening-report module]
+
+\RequirePackage[most]{tcolorbox}
+
+\makeatletter
+
+% Opening-report fields use their own outline convention in both discipline
+% profiles.  Every field restarts this sequence through \yibinproposalfield.
+\renewcommand{\thesection}{（\chinese{section}）}
+\renewcommand{\thesubsection}{\arabic{subsection}.}
+\renewcommand{\thesubsubsection}{（\arabic{subsubsection}）}
+
+\fancypagestyle{yibinproposal}{%
+  \fancyhf{}
+  \fancyfoot[C]{\yibinenglishfont\zihao{-5}\thepage}
+  \renewcommand{\headrulewidth}{0pt}
+  \renewcommand{\footrulewidth}{0pt}
+}
+
+\newcommand{\yibin@proposalrulewidth}{0.75pt}
+
+\newcommand{\yibin@proposaldivider}{%
+  \draw[line width=\yibin@proposalrulewidth]
+    ([xshift=43pt]frame.north west) -- ([xshift=43pt]frame.south west);%
+}
+
+\newcommand{\yibin@proposalframe}{%
+  \draw[line width=\yibin@proposalrulewidth]
+    (frame.north west) rectangle (frame.south east);%
+}
+
+\newcommand{\yibin@proposallabelnode}[1]{%
+  \node[anchor=center,text width=28pt,align=center]
+    at ([xshift=21.5pt]frame.west)
+    {\yibinhei\bfseries\fontsize{12bp}{20bp}\selectfont #1};%
+}
+
+\newtcolorbox{yibin@proposalbox}[3]{%
+  enhanced,
+  breakable,
+  colback=white,
+  frame hidden,
+  boxrule=0.75pt,
+  arc=0pt,
+  outer arc=0pt,
+  boxsep=0pt,
+  left=52pt,
+  right=9pt,
+  top=8pt,
+  bottom=8pt,
+  before skip=0pt,
+  after skip=0pt,
+  height from={#2 to \textheight},
+  overlay unbroken={%
+    \yibin@proposalframe
+    \yibin@proposaldivider
+    \yibin@proposallabelnode{#1}},
+  overlay first={%
+    \yibin@proposalframe
+    \yibin@proposaldivider
+    \yibin@proposallabelnode{#1}},
+  overlay middle={%
+    \yibin@proposalframe
+    \yibin@proposaldivider
+    \yibin@proposallabelnode{#1}},
+  overlay last={%
+    \yibin@proposalframe
+    \yibin@proposaldivider
+    \yibin@proposallabelnode{#1}},
+  #3
+}
+
+\newcommand{\yibin@proposalbody}[1]{%
+  \begingroup
+    % The supplied opening-report form uses single-spaced 12 pt text inside
+    % cells; the thesis/review body uses 1.5 spacing separately.
+    \yibinsong\zihao{-4}\setstretch{1.0}%
+    \setlength{\parindent}{2em}%
+    \setlength{\parskip}{0pt}%
+    #1\par
+  \endgroup
+}
+
+\newcommand{\yibin@proposalprompt}[1]{%
+  \noindent{\yibinsong\zihao{-4}#1}\par
+}
+
+\newcommand{\yibin@proposal@field@significance}[1]{%
+  \begin{yibin@proposalbox}{\shortstack{选\\题\\意\\义}}{165.15pt}{}
+    \yibin@proposalbody{#1}
+  \end{yibin@proposalbox}
+}
+
+\expandafter\newcommand\csname yibin@proposal@field@research-status\endcsname[1]{%
+  \begin{yibin@proposalbox}{\shortstack{国\\内\\外\\研\\究\\现\\状\\概\\述}}{297.15pt}{}
+    \yibin@proposalprompt{国内、国外研究现状应分开概述；概述时语言简练、重点突出。}
+    \yibin@proposalbody{#1}
+  \end{yibin@proposalbox}
+}
+
+\expandafter\newcommand\csname yibin@proposal@field@research-content\endcsname[1]{%
+  \begin{yibin@proposalbox}{\shortstack{主\\要\\研\\究\\内\\容}}{183.15pt}{}
+    \yibin@proposalbody{#1}
+  \end{yibin@proposalbox}
+}
+
+\expandafter\newcommand\csname yibin@proposal@field@research-approach\endcsname[1]{%
+  \begin{yibin@proposalbox}{\shortstack{拟\\采\\用\\的\\研\\究\\思\\路}}{411.6pt}{}
+    \yibin@proposalprompt{主要描述研究方法、技术路线、可行性论证等。}
+    \yibin@proposalbody{#1}
+  \end{yibin@proposalbox}
+}
+
+\newcommand{\yibin@proposal@field@schedule}[1]{%
+  \begin{yibin@proposalbox}{\shortstack{研\\究\\工\\作\\安\\排\\及\\进\\度}}{140.1pt}{}
+    \yibin@proposalprompt{进度（应与二级学部（院）的进度大体一致）}
+    \yibin@proposalbody{#1}
+  \end{yibin@proposalbox}
+}
+
+\newcommand{\yibin@proposal@field@references}[1]{%
+  \begin{yibin@proposalbox}{\shortstack{参\\考\\文\\献\\目\\录}}{383.6pt}{}
+    \yibin@proposalprompt{根据《信息与文献—参考文献著录规则》（GB/T 7714--2015），规范表述。}
+    \yibin@proposalbody{#1}
+  \end{yibin@proposalbox}
+}
+
+\expandafter\newcommand\csname yibin@proposal@field@advisor-opinion\endcsname[1]{%
+  \begin{yibin@proposalbox}{\shortstack{指\\导\\教\\师\\意\\见}}{99.9pt}{}
+    \yibin@proposalbody{#1}
+    \par\vspace{0.6\baselineskip}
+    \noindent\hfill
+    \yibinsong\zihao{-4}签名：\yibin@signatureimage{\yibinadvisorsignature}{2.35cm}%
+    \hspace{2em}年\hspace{1.4em}月\hspace{1.4em}日
+  \end{yibin@proposalbox}
+}
+
+\NewDocumentCommand{\makeyibinproposal}{}{%
+  \ifyibin@proposal\else
+    \ClassError{yibinthesis}
+      {\string\makeyibinproposal requires the proposal class option}
+      {Use \string\documentclass[proposal,humanities]{yibinthesis}.}%
+  \fi
+  \clearpage
+  % The current opening-report sample has a real cover page before the
+  % page-4 form. Keep the cover outside the form geometry and page counter.
+  \thispagestyle{empty}%
+  \begingroup
+    \setlength{\parindent}{0pt}%
+    \yibinprofilelogo{2.606cm}
+    \begin{textblock*}{21cm}(0cm,7.064cm)
+      \centering\yibinhei\bfseries\fontsize{28bp}{34bp}\selectfont
+      本科生毕业论文
+    \end{textblock*}
+    \begin{textblock*}{15cm}(3cm,10.160cm)
+      \centering\yibin@covertitle
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,13.447cm)
+      \yibin@coverfield{学院（部）}{3.5cm}{11.6cm}{\yibincollege}
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,15.109cm)
+      \yibin@coverfield{专\hspace{2em}业}{3.5cm}{11.6cm}{\yibinmajor}
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,16.733cm)
+      \yibin@coverfield{学生姓名}{3.2cm}{11.9cm}{\yibinauthor}
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,18.357cm)
+      \yibin@coverdualfield{学\hspace{2em}号}{3.2cm}{5.6cm}{\yibinstudentid}%
+        {年级}{1.6cm}{4.5cm}{\yibingradeclass}
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,20.019cm)
+      \yibin@coverdualfield{指导教师}{3.2cm}{5.6cm}{\yibinadvisor}%
+        {职称}{1.55cm}{3.1cm}{\yibinadvisortitle}
+    \end{textblock*}
+    \null
+  \endgroup
+  \clearpage
+  \newgeometry{top=70.9pt,bottom=51.05pt,left=85.05pt,right=62.35pt,
+    headheight=0pt,headsep=0pt,footskip=49.6pt}%
+  \pagenumbering{arabic}
+  \setcounter{page}{4}
+  \pagestyle{yibinproposal}
+  \thispagestyle{yibinproposal}
+  \begingroup
+    \setlength{\parindent}{0pt}%
+    \centering
+    {\yibinkai\bfseries\fontsize{18bp}{24bp}\selectfont
+      宜宾学院本科毕业论文（设计）开题报告\par}
+    \vspace{6pt}
+    {\yibinsong\bfseries\fontsize{12bp}{18bp}\selectfont（学生填写）\par}
+    \vspace{6pt}
+  \endgroup
+}
+
+\NewDocumentCommand{\yibinproposalfield}{m +m}{%
+  \setcounter{section}{0}%
+  \setcounter{subsection}{0}%
+  \setcounter{subsubsection}{0}%
+  \@ifundefined{yibin@proposal@field@#1}{%
+    \ClassError{yibinthesis}
+      {Unknown proposal field '#1'}
+      {Use significance, research-status, research-content, research-approach,
+       schedule, references, or advisor-opinion.}%
+  }{%
+    \csname yibin@proposal@field@#1\endcsname{#2}%
+  }%
+}
+
+% Float-free helpers keep figures and tables inside breakable form fields.
+\NewDocumentCommand{\yibinproposalfigure}{O{0.82\linewidth} m m m}{%
+  \par\begin{center}
+    \includegraphics[width=#1]{#2}\par
+    \captionof{figure}{#3}\label{#4}%
+  \end{center}\par
+}
+
+\NewDocumentEnvironment{yibinproposaltable}{m m +b}{%
+  \par\begin{center}
+    \captionof{table}{#1}\label{#2}%
+    #3
+  \end{center}\par
+}{}
+
+\ifyibin@bibliography
+  \NewDocumentCommand{\printyibinproposalbibliography}{}{%
+    \begingroup
+      \setlength{\parindent}{0pt}%
+      \printbibliography[heading=none]
+    \endgroup
+  }
+\else
+  \NewDocumentCommand{\printyibinproposalbibliography}{}{}
+\fi
+
+\makeatother
+\endinput

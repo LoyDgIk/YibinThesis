@@ -1,23 +1,24 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "YibinThesis project build configuration",
+  "description": "单入口 YibinThesis 外部消费项目构建配置。文档类型由 main 中的 documentclass 选项决定。",
   "type": "object",
   "additionalProperties": false,
   "required": ["schemaVersion", "main"],
   "properties": {
-    "$schema": { "type": "string" },
-    "schemaVersion": { "const": 1 },
-    "main": { "type": "string", "minLength": 1 },
-    "outputRoot": { "type": "string", "minLength": 1 },
-    "checkOutputRoot": { "type": "string", "minLength": 1 },
-    "citationMode": { "enum": ["linked", "native"] },
-    "wordRefresh": { "enum": ["auto", "always", "never"] },
+    "$schema": { "type": "string", "description": "本 schema 的路径，仅用于编辑器补全和校验。" },
+    "schemaVersion": { "const": 1, "default": 1, "description": "配置格式版本，当前固定为 1。" },
+    "main": { "type": "string", "minLength": 1, "description": "唯一 LaTeX 入口，相对于配置文件目录解析。" },
+    "outputRoot": { "type": "string", "minLength": 1, "description": "常规构建根目录；配置中的相对路径以配置文件目录为基准。" },
+    "checkOutputRoot": { "type": "string", "minLength": 1, "description": "check 命令的构建根目录；省略时使用 outputRoot。" },
+    "citationMode": { "enum": ["linked", "native"], "default": "linked", "description": "Word 文献引用模式。" },
+    "wordRefresh": { "enum": ["auto", "always", "never"], "default": "auto", "description": "Microsoft Word 域更新和重新分页策略。" },
     "deliverables": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "pdf": { "type": "string", "pattern": "\\.[pP][dD][fF]$" },
-        "word": { "type": "string", "pattern": "\\.[dD][oO][cC][xX]$" }
+        "pdf": { "type": "string", "pattern": "\\.[pP][dD][fF]$", "description": "成功构建后发布的 PDF 路径，相对于配置文件目录解析；文件名可使用 {{title}}、{{author}} 等 metadata.tex 字段占位符。" },
+        "word": { "type": "string", "pattern": "\\.[dD][oO][cC][xX]$", "description": "成功构建后发布的 DOCX 路径，相对于配置文件目录解析；文件名可使用 {{title}}、{{author}} 等 metadata.tex 字段占位符。" }
       }
     }
   }

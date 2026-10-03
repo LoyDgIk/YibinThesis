@@ -36,6 +36,8 @@ jobs:
 
       - name: Run CLI tests
         shell: pwsh
+        env:
+          PYTHONUTF8: "1"
         run: |
           python -m compileall -q .
           python -m unittest discover -s lib/tests -p "test_cli.py" -v

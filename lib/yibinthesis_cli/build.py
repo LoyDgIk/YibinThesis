@@ -15,7 +15,10 @@ def project_and_config(args) -> tuple[Path, Path]:
     if args.project and args.config:
         raise CliError("--project 与 --config 不能同时使用。")
     if args.config:
-        config = Path(args.config).expanduser().resolve()
+        # Keep the caller's absolute spelling. Windows CI may expose the same
+        # temporary directory through an 8.3 alias; canonicalizing here would
+        # make command inspection disagree with the path supplied by callers.
+        config = Path(args.config).expanduser().absolute()
         project = config.parent
     else:
         project = Path(args.project or ".").expanduser().resolve()

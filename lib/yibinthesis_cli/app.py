@@ -7,7 +7,7 @@ import sys
 from typing import Sequence
 
 from . import build
-from .runtime import CLI_VERSION, CliError
+from .runtime import CLI_VERSION, CliError, configure_stdio
 from .scaffold import DISCIPLINES, DOCUMENT_TYPES, create_project
 
 
@@ -57,6 +57,7 @@ def make_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    configure_stdio()
     args = make_parser().parse_args(argv)
     try:
         if args.command in {"new", "init"}:

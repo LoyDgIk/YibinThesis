@@ -16,6 +16,14 @@ class CliError(RuntimeError):
     """An expected user-facing CLI error."""
 
 
+def configure_stdio() -> None:
+    """Keep user-facing CLI diagnostics UTF-8 on Windows console runners."""
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is not None:
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def resource_root() -> Path:
     extracted = getattr(sys, "_MEIPASS", None)
     if extracted:

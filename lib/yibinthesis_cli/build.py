@@ -46,7 +46,12 @@ def command_args(args, operation: str) -> tuple[list[str], Path]:
     if not builder.is_file():
         raise CliError(f"找不到内置构建器：{builder}")
     command = args.format if operation == "build" else operation
-    config_argument = args.config if args.config and Path(args.config).expanduser().is_absolute() else str(config)
+    if args.config and Path(args.config).expanduser().is_absolute():
+        config_argument = args.config
+    elif args.project and Path(args.project).expanduser().is_absolute():
+        config_argument = str(Path(args.project).expanduser() / PROJECT_CONFIG_NAME)
+    else:
+        config_argument = str(config)
     command_line = [_powershell(), "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(builder), command, "-Config", config_argument]
     if args.main:
         main = Path(args.main).expanduser()

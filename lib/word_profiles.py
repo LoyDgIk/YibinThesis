@@ -146,6 +146,9 @@ def _insert_proposal_cover(
     paper_title = document.add_paragraph(style=STYLE_PROPOSAL_TITLE)
     paper_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     paper_title.add_run(metadata.get("title", "（填写中文题目）"))
+    proposal_type = document.add_paragraph(style=STYLE_PROPOSAL_TITLE)
+    proposal_type.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    proposal_type.add_run("开题报告")
     info = document.add_table(rows=6, cols=2)
     info.alignment = WD_TABLE_ALIGNMENT.CENTER
     info.autofit = False

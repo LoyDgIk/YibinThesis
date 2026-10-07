@@ -121,6 +121,8 @@ def _insert_proposal_cover(
 ) -> None:
     """Insert the filled sample's cover block before the page-4 form."""
 
+    _calibrate_cover_styles(document)
+
     try:
         logo = _resolve_cover_logo(
             metadata,
@@ -140,41 +142,61 @@ def _insert_proposal_cover(
     else:
         run = logo_paragraph.add_run("宜宾学院")
         _set_run_fonts(run, "SimHei", "Times New Roman", 26, bold=True)
-    title = document.add_paragraph(style=STYLE_PROPOSAL_TITLE)
+    title = document.add_paragraph(style="CoverThesisType")
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
     title.add_run("本科生毕业论文")
-    paper_title = document.add_paragraph(style=STYLE_PROPOSAL_TITLE)
+    paper_title = document.add_paragraph(style="CoverTitle")
     paper_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    paper_title.add_run(metadata.get("title", "（填写中文题目）"))
-    proposal_type = document.add_paragraph(style=STYLE_PROPOSAL_TITLE)
+    paper_title.paragraph_format.space_after = Pt(8)
+    paper_title.paragraph_format.line_spacing = 1.5
+    title_run = paper_title.add_run(metadata.get("title", "（填写中文题目）"))
+    _set_run_fonts(title_run, "SimHei", "SimHei", 18, bold=True, underline=True)
+    proposal_type = document.add_paragraph(style=STYLE_PROPOSAL_SUBTITLE)
     proposal_type.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    proposal_type.paragraph_format.space_before = Pt(0)
+    proposal_type.paragraph_format.space_after = Pt(18)
     proposal_type.add_run("开题报告")
-    info = document.add_table(rows=6, cols=2)
-    info.alignment = WD_TABLE_ALIGNMENT.CENTER
-    info.autofit = False
-    _set_fixed_table_geometry(info, (3.2, 13.8), style_name=STYLE_PROPOSAL_FORM_TABLE)
-    _set_table_borders_none(info)
-    rows = (
-        ("学院（部）", metadata.get("college", "")),
-        ("专    业", metadata.get("major", "")),
-        ("学生姓名", metadata.get("author", "")),
-        ("学    号", metadata.get("student-id", "")),
-        ("年    级", format_grade_class(metadata)),
-        ("指导教师", metadata.get("advisor", "")),
-    )
-    for row, (label, value) in zip(info.rows, rows):
-        for cell in row.cells:
-            _set_form_cell_margins(cell, top=0, bottom=0, left=40, right=40)
-            cell.vertical_alignment = WD_CELL_VERTICAL_ALIGNMENT.CENTER
-        row.cells[0].paragraphs[0].style = document.styles[STYLE_PROPOSAL_LABEL]
-        row.cells[0].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.LEFT
-        row.cells[0].paragraphs[0].add_run(label)
-        row.cells[1].paragraphs[0].style = document.styles[STYLE_PROPOSAL_BODY]
-        row.cells[1].paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
-        row.cells[1].paragraphs[0].add_run(value)
     date = document.add_paragraph(style=STYLE_REVIEW_DATE)
     date.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    date.paragraph_format.space_before = Pt(14)
     date.add_run(metadata.get("date", ""))
+    cover_anchor = date
+
+    _insert_cover_table(
+        document, cover_anchor,
+        [("label", "学院（部）", 3.4925), ("value", metadata.get("college", ""), 11.6121)],
+        row_height_pt=34.0,
+    )
+    _insert_cover_table(
+        document, cover_anchor,
+        [("label", "专    业", 3.4925), ("value", metadata.get("major", ""), 11.9296)],
+        row_height_pt=34.0,
+    )
+    _insert_cover_table(
+        document, cover_anchor,
+        [("label", "学生姓名", 3.1750), ("value", metadata.get("author", ""), 11.9296)],
+        row_height_pt=34.0,
+    )
+    _insert_cover_table(
+        document, cover_anchor,
+        [
+            ("label", "学    号", 3.1750),
+            ("value", metadata.get("student-id", ""), 5.6686),
+            ("label", "年级", 1.5875),
+            ("value", format_grade_class(metadata), 4.5367),
+        ],
+        row_height_pt=34.0,
+    )
+    _insert_cover_table(
+        document, cover_anchor,
+        [
+            ("label", "指导教师", 3.1750),
+            ("value", metadata.get("advisor", ""), 5.6686),
+            ("label", "职称", 1.5875),
+            ("value", metadata.get("advisor-title", ""), 4.5367),
+        ],
+        row_height_pt=34.0,
+    )
 
 
 def _append_proposal_table(
@@ -357,9 +379,9 @@ def _postprocess_proposal_docx(
     section.page_height = Cm(29.7)
     section.top_margin = Pt(72)
     section.bottom_margin = Pt(72)
-    section.left_margin = Pt(85.05)
-    section.right_margin = Pt(62.35)
-    section.header_distance = Pt(0)
+    section.left_margin = Pt(90)
+    section.right_margin = Pt(90)
+    section.header_distance = Pt(42.55)
     section.footer_distance = Pt(49.6)
     section.header.is_linked_to_previous = False
     _clear_story(section.header)

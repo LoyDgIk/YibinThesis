@@ -68,6 +68,24 @@ STYLE_REVIEW_THESIS_TITLE = "宜宾综述-论文题目"
 STYLE_REVIEW_INFO_LABEL = "宜宾综述-信息标签"
 STYLE_REVIEW_INFO_VALUE = "宜宾综述-信息值"
 STYLE_REVIEW_DATE = "宜宾综述-日期"
+STYLE_REVIEW_COVER_FIELD = "宜宾综述-封面填写行"
+STYLE_REVIEW_COVER_LABEL = "宜宾综述-封面标签"
+STYLE_REVIEW_COVER_VALUE = "宜宾综述-封面填值"
+STYLE_REVIEW_AUTHOR = "宜宾综述-作者"
+STYLE_REVIEW_AFFILIATION = "宜宾综述-作者单位"
+STYLE_REVIEW_ABSTRACT_TITLE = "宜宾综述-中文摘要标题"
+STYLE_REVIEW_ENGLISH_ABSTRACT_TITLE = "宜宾综述-英文摘要标题"
+STYLE_REVIEW_CHINESE_ABSTRACT = "宜宾综述-中文摘要正文"
+STYLE_REVIEW_ENGLISH_ABSTRACT = "宜宾综述-英文摘要正文"
+STYLE_REVIEW_KEYWORDS = "宜宾综述-中文关键词"
+STYLE_REVIEW_ENGLISH_KEYWORDS = "宜宾综述-英文关键词"
+STYLE_REVIEW_BODY = "宜宾综述-正文"
+STYLE_REVIEW_HEADING_1 = "宜宾综述-一级标题"
+STYLE_REVIEW_HEADING_2 = "宜宾综述-二级标题"
+STYLE_REVIEW_HEADING_3 = "宜宾综述-三级标题"
+STYLE_REVIEW_HEADING_4 = "宜宾综述-四级标题"
+STYLE_REVIEW_UNNUMBERED_HEADING = "宜宾综述-无编号标题"
+STYLE_REVIEW_BIBLIOGRAPHY = "宜宾综述-参考文献"
 STYLE_COVER_LAYOUT_TABLE = "YibinCoverLayout"
 STYLE_FRONT_LAYOUT_TABLE = "YibinFrontLayout"
 STYLE_PROPOSAL_FORM_TABLE = "YibinProposalForm"
@@ -358,7 +376,7 @@ def _configure_character_style(
     east_asia: str,
     latin: str = TIMES,
     size: float,
-    bold: bool = False,
+    bold: bool | None = False,
     superscript: bool = False,
     quick_priority: int | None = None,
 ):
@@ -756,6 +774,19 @@ def build_reference_docx(output: Path) -> Path:
         bold=True,
     )
     document.styles["CoverValue"].font.underline = False
+    # Bold is a toggle in the OOXML style hierarchy.  These two character
+    # styles inherit it from the review field paragraph; repeating w:b/w:bCs
+    # here would toggle the final label/value weight back to regular in Word.
+    review_label = _configure_character_style(
+        document, STYLE_REVIEW_COVER_LABEL,
+        east_asia=SIMHEI, latin=SIMHEI, size=18, bold=None,
+    )
+    review_label.font.underline = False
+    review_value = _configure_character_style(
+        document, STYLE_REVIEW_COVER_VALUE,
+        east_asia=SIMSUN, latin=TIMES, size=16, bold=None,
+    )
+    review_value.font.underline = True
     _configure_character_style(
         document,
         "DeclarationRegulationLeadLabel",
@@ -820,11 +851,27 @@ def build_reference_docx(output: Path) -> Path:
         (STYLE_PROPOSAL_PROMPT, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.LEFT, False, 1.5, 0, 0, True, False, 54, None),
         (STYLE_PROPOSAL_UNNUMBERED_HEADING, KAITI, 15, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 9, 6, True, False, 55, None),
         (STYLE_PROPOSAL_SIGNATURE, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.RIGHT, False, 1.5, 0, 0, True, False, 56, None),
-        (STYLE_REVIEW_DOCUMENT_TITLE, SIMHEI, 28, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 42, 72, True, False, 57, None),
-        (STYLE_REVIEW_THESIS_TITLE, SIMHEI, 18, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.5, 0, 78, True, False, 58, None),
+        (STYLE_REVIEW_DOCUMENT_TITLE, SIMHEI, 28, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 24, 64, True, False, 57, None),
+        (STYLE_REVIEW_THESIS_TITLE, SIMHEI, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 3, True, False, 58, None),
         (STYLE_REVIEW_INFO_LABEL, SIMHEI, 18, True, WD_ALIGN_PARAGRAPH.LEFT, False, 1.0, 0, 0, True, False, 59, None),
         (STYLE_REVIEW_INFO_VALUE, SIMSUN, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 0, True, False, 60, None),
-        (STYLE_REVIEW_DATE, SIMSUN, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 0, True, False, 61, None),
+        (STYLE_REVIEW_DATE, SIMSUN, 15, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 48, 0, False, False, 61, None),
+        (STYLE_REVIEW_COVER_FIELD, SIMHEI, 18, True, WD_ALIGN_PARAGRAPH.LEFT, False, 2.0, 0, 0, True, False, 65, None),
+        (STYLE_REVIEW_AUTHOR, SIMHEI, 12, False, WD_ALIGN_PARAGRAPH.CENTER, False, 1.5, 0, 0, True, False, 66, None),
+        (STYLE_REVIEW_AFFILIATION, SIMHEI, 12, False, WD_ALIGN_PARAGRAPH.CENTER, False, 1.5, 0, 3, True, False, 67, None),
+        (STYLE_REVIEW_ABSTRACT_TITLE, SIMHEI, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 3, True, False, 68, None),
+        (STYLE_REVIEW_ENGLISH_ABSTRACT_TITLE, TIMES, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 6, 3, True, False, 69, None),
+        (STYLE_REVIEW_CHINESE_ABSTRACT, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, True, 1.5, 0, 0, True, False, 70, None),
+        (STYLE_REVIEW_ENGLISH_ABSTRACT, TIMES, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, False, 1.5, 0, 0, True, False, 71, None),
+        (STYLE_REVIEW_KEYWORDS, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.LEFT, False, 1.5, 0, 0, True, False, 72, None),
+        (STYLE_REVIEW_ENGLISH_KEYWORDS, TIMES, 12, False, WD_ALIGN_PARAGRAPH.LEFT, False, 1.5, 0, 0, False, False, 73, None),
+        (STYLE_REVIEW_BODY, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, True, 1.5, 0, 0, False, False, 74, None),
+        (STYLE_REVIEW_HEADING_1, SIMHEI, 16, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 12, 6, True, False, 75, 0),
+        (STYLE_REVIEW_HEADING_2, KAITI, 15, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 9, 6, True, False, 76, 1),
+        (STYLE_REVIEW_HEADING_3, SIMSUN, 14, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 6, 3, True, False, 77, 2),
+        (STYLE_REVIEW_HEADING_4, SIMSUN, 14, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 6, 3, True, False, 78, 3),
+        (STYLE_REVIEW_UNNUMBERED_HEADING, SIMHEI, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.5, 0, 12, True, False, 79, 0),
+        (STYLE_REVIEW_BIBLIOGRAPHY, SIMSUN, 10.5, False, WD_ALIGN_PARAGRAPH.JUSTIFY, False, 1.0, 0, 0, False, False, 80, None),
     )
     quick_paragraph_styles = {
         STYLE_BODY,
@@ -867,6 +914,22 @@ def build_reference_docx(output: Path) -> Path:
         STYLE_REVIEW_INFO_LABEL,
         STYLE_REVIEW_INFO_VALUE,
         STYLE_REVIEW_DATE,
+        STYLE_REVIEW_COVER_FIELD,
+        STYLE_REVIEW_AUTHOR,
+        STYLE_REVIEW_AFFILIATION,
+        STYLE_REVIEW_ABSTRACT_TITLE,
+        STYLE_REVIEW_ENGLISH_ABSTRACT_TITLE,
+        STYLE_REVIEW_CHINESE_ABSTRACT,
+        STYLE_REVIEW_ENGLISH_ABSTRACT,
+        STYLE_REVIEW_KEYWORDS,
+        STYLE_REVIEW_ENGLISH_KEYWORDS,
+        STYLE_REVIEW_BODY,
+        STYLE_REVIEW_HEADING_1,
+        STYLE_REVIEW_HEADING_2,
+        STYLE_REVIEW_HEADING_3,
+        STYLE_REVIEW_HEADING_4,
+        STYLE_REVIEW_UNNUMBERED_HEADING,
+        STYLE_REVIEW_BIBLIOGRAPHY,
     }
     for (
         name,
@@ -993,6 +1056,19 @@ def build_reference_docx(output: Path) -> Path:
     document.styles[STYLE_PROPOSAL_BODY].next_paragraph_style = document.styles[STYLE_PROPOSAL_BODY]
     document.styles[STYLE_PROPOSAL_PROMPT].next_paragraph_style = document.styles[STYLE_PROPOSAL_BODY]
     document.styles[STYLE_PROPOSAL_UNNUMBERED_HEADING].next_paragraph_style = document.styles[STYLE_PROPOSAL_BODY]
+    for style_name in (
+        STYLE_REVIEW_BODY,
+        STYLE_REVIEW_HEADING_1,
+        STYLE_REVIEW_HEADING_2,
+        STYLE_REVIEW_HEADING_3,
+        STYLE_REVIEW_HEADING_4,
+    ):
+        document.styles[style_name].next_paragraph_style = document.styles[STYLE_REVIEW_BODY]
+    for style_name in (STYLE_REVIEW_CHINESE_ABSTRACT, STYLE_REVIEW_ENGLISH_ABSTRACT):
+        document.styles[style_name].paragraph_format.keep_together = True
+    document.styles[STYLE_REVIEW_COVER_FIELD].paragraph_format.keep_together = True
+    document.styles[STYLE_REVIEW_ABSTRACT_TITLE].next_paragraph_style = document.styles[STYLE_REVIEW_CHINESE_ABSTRACT]
+    document.styles[STYLE_REVIEW_ENGLISH_ABSTRACT_TITLE].next_paragraph_style = document.styles[STYLE_REVIEW_ENGLISH_ABSTRACT]
 
     marker = document.styles["YibinSectionMarker"]
     marker.font.hidden = True

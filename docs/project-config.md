@@ -66,7 +66,7 @@ my-document/
 
 - `thesis`：`template-year = 2024`；
 - `proposal`：`template-year = 2022`，对应 2022 工作表物理第 5 至 7 页；
-- `literature-review`：`template-year = 2024`，对应 2024 论文正文版式基线。
+- `literature-review`：`template-year = 2024`，对应 2024 工科类、文科类文献综述模板。
 
 类型与年份不匹配时构建会停止。当前不支持 2025 论文模板。
 
@@ -86,6 +86,44 @@ yibinthesis clean
 的格式位置参数为 `pdf`、`word` 或 `all`，省略时使用 `all`。`--project` 与 `--config`
 互斥；`--config` 指向配置文件时，项目根自动取其所在目录。`--dry-run` 可用于预览
 脚手架文件计划，`--force` 只允许覆盖 CLI 自己标记过的脚手架文件。
+
+### 文献综述脚手架与元数据
+
+新建独立综述项目：
+
+```powershell
+yibinthesis new ..\论文项目\我的综述 --type literature-review --discipline humanities
+```
+
+`literature-review` 生成的入口按封面、`chapters/00-abstract-cn`、
+`chapters/01-abstract-en`、`chapters/body`、`\printyibinbibliography` 的顺序装配。
+摘要前显示题目、作者和学部/城市/邮编单位行，中英文摘要同页；正文另起一页，以无标题
+引言开始，主题章连续排列，末章为“结论与展望”，参考文献单独起页，默认不生成目录。
+具体结构与字数、文献要求见[文档类型与入口](document-types.md#文献综述)。
+
+`new` 和 `init` 可使用以下选项写入 `latex/metadata.tex`：
+
+| CLI 选项 | 元数据键 | 综述中的含义 |
+|---|---|---|
+| `--college` | `college` | 封面学部（院）和摘要前单位行中的学部。 |
+| `--affiliation-city` | `affiliation-city` | 摘要前单位行中的城市。 |
+| `--affiliation-postcode` | `affiliation-postcode` | 摘要前单位行中的邮编。 |
+| `--advisor` | `advisor` | 指导教师 1。 |
+| `--advisor-title` | `advisor-title` | 指导教师 1 的职称。 |
+| `--second-advisor`，兼容 `--external-advisor` | `second-advisor` | 指导教师 2。 |
+| `--second-advisor-title`，兼容 `--external-advisor-title` | `second-advisor-title` | 指导教师 2 的职称。 |
+
+`--second-advisor` 是 `--external-advisor` 的别名，职称选项同理。两种参数写法在创建
+综述时都输出 `second-advisor`、`second-advisor-title`；创建正式论文或开题报告时仍
+输出 `external-advisor`、`external-advisor-title`。已有综述元数据中的这两个旧键继续
+兼容，但“指导教师 2”不等于“校外导师”。城市与邮编不从模板样例自动填入，第二导师
+信息没有实际资料时留空；其余个人和题目字段按真实资料填写。
+
+正式论文脚手架的绪论保留五个 `\section`：“研究的背景”“国内外研究现状”“选题的目的”
+“课题研究的意义”“研究的内容及方法”。新建项目提供结构与待填内容，不代表已满足正文
+字数、真实引用或论文成果要求。
+
+### 运行环境与构建入口
 
 需要在没有安装 Python 的 Windows 机器上运行时，可用 `build_exe.ps1` 生成 PyInstaller
 发行版。默认生成 onedir 目录，传入 `-OneFile` 才生成单文件 exe；两种发行版都只

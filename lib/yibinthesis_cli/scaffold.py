@@ -58,6 +58,9 @@ def project_config(root: Path, document_type: str) -> dict[str, object]:
 
 def metadata_tex(args, document_type: str) -> str:
     year = "2022" if document_type == "proposal" else "2024"
+    review = document_type == "literature-review"
+    second_advisor_key = "second-advisor" if review else "external-advisor"
+    second_advisor_title_key = f"{second_advisor_key}-title"
     return rf"""% UTF-8 metadata for the generated external project.
 \yibinsetup{{
   template-year           = {year},
@@ -65,14 +68,16 @@ def metadata_tex(args, document_type: str) -> str:
   english-title           = {{{_value(args.english_title, "Title in English")}}},
   author                  = {{{_value(args.author, "（填写姓名）")}}},
   student-id              = {{{_value(args.student_id, "（填写学号）")}}},
-  college                 = {{{_value(args.college, "（填写学院）")}}},
+  college                 = {{{_value(args.college, "（填写学部）" if review else "（填写学院）")}}},
+  affiliation-city        = {{{_value(args.affiliation_city, "（填写所在地）" if review else "")}}},
+  affiliation-postcode    = {{{_value(args.affiliation_postcode, "（填写邮编）" if review else "")}}},
   major                   = {{{_value(args.major, "（填写专业）")}}},
   grade                   = {{{_value(args.grade, "（填写年级）")}}},
   class-name              = {{{_value(args.class_name)}}},
-  advisor                 = {{{_value(args.advisor, "（填写校内导师）")}}},
+  advisor                 = {{{_value(args.advisor, "（填写指导教师1）" if review else "（填写校内导师）")}}},
   advisor-title           = {{{_value(args.advisor_title, "（填写职称）")}}},
-  external-advisor        = {{{_value(args.external_advisor)}}},
-  external-advisor-title  = {{{_value(args.external_advisor_title)}}},
+  {second_advisor_key:<23} = {{{_value(args.external_advisor)}}},
+  {second_advisor_title_key:<23} = {{{_value(args.external_advisor_title)}}},
   version                 = {{{_value(args.version)}}},
   date                    = {{{_value(args.date)}}},
   secrecy                 = {args.secrecy},
@@ -93,8 +98,16 @@ def _main_tex(document_type: str, discipline: str) -> str:
 \addbibresource{{references.bib}}
 \begin{{document}}
 \makeyibinproposal
-\yibinproposalfield{{significance}}{{请填写选题意义。}}
-\yibinproposalfield{{research-status}}{{请填写国内外研究现状概述。}}
+\yibinproposalfield{{significance}}{{
+  \section{{研究背景与意义}}
+  请填写选题意义。
+}}
+\yibinproposalfield{{research-status}}{{
+  \section{{国内外研究进展}}
+  请填写国内外研究现状概述。
+  \subsection{{已有研究评述}}
+  请结合文献概括已有研究的贡献与局限。
+}}
 \yibinproposalfield{{research-content}}{{请填写主要研究内容。}}
 \yibinproposalfield{{research-approach}}{{请填写研究思路、方法、技术路线与可行性论证。}}
 \yibinproposalfield{{schedule}}{{请填写研究工作安排及进度。}}
@@ -109,6 +122,8 @@ def _main_tex(document_type: str, discipline: str) -> str:
 \addbibresource{{references.bib}}
 \begin{{document}}
 \makeyibinliteraturereviewcover
+\input{{chapters/00-abstract-cn}}
+\input{{chapters/01-abstract-en}}
 \input{{chapters/body}}
 \printyibinbibliography
 \end{{document}}
@@ -139,14 +154,59 @@ def _main_tex(document_type: str, discipline: str) -> str:
 
 
 def _body_files(document_type: str) -> Mapping[str, str]:
+    abstracts = {
+        "chapters/00-abstract-cn.tex": r"""\begin{cnabstract}
+% 中文摘要约 250 字，单段；用实际综述或论文内容替换占位。
+（填写中文摘要）
+
+\cnkeywords{关键词一；关键词二；关键词三}
+\end{cnabstract}
+""",
+        "chapters/01-abstract-en.tex": r"""\begin{enabstract}
+% 英文摘要与中文对应，关键词逐项对应；保持单段。
+Write the English abstract here.
+
+\enkeywords{keyword one; keyword two; keyword three}
+\end{enabstract}
+""",
+    }
     if document_type == "literature-review":
-        return {"chapters/body.tex": "%% 文献综述正文（一般不少于 3000 字）\n请在此填写综述正文；引言部分可以不设标题。\n"}
+        return {
+            **abstracts,
+            "chapters/body.tex": r"""% 综述正文不少于 3000 字；引言不设标题。
+% 主题章按实际文献组织，最后保留“结论与展望”。
+（填写引言正文）
+
+\chapter{研究主题与进展}
+（填写按主题组织的文献综述）
+
+\chapter{研究评述}
+（填写有文献依据的比较、评价与不足）
+
+\yibinclosingchapter[结论与展望]
+（填写有证据支持的综合结论与研究展望）
+""",
+        }
     if document_type == "proposal":
         return {}
     return {
-        "chapters/00-abstract-cn.tex": r"\begin{cnabstract}" "\n请在此填写中文摘要（约 250 字）。\n\n" r"\cnkeywords{关键词一；关键词二；关键词三}" "\n" r"\end{cnabstract}" "\n",
-        "chapters/01-abstract-en.tex": r"\begin{enabstract}" "\nPlease write the English abstract here.\n\n" r"\enkeywords{keyword one; keyword two; keyword three}" "\n" r"\end{enabstract}" "\n",
-        "chapters/10-introduction.tex": r"\yibinopeningchapter" "\n" r"\section{研究背景}" "\n请在此填写绪论内容。\n" r"\section{研究内容与方法}" "\n请在此填写研究内容与方法。\n",
+        **abstracts,
+        "chapters/10-introduction.tex": r"""\yibinopeningchapter
+\section{研究的背景}
+（填写研究背景）
+
+\section{国内外研究现状}
+（填写有来源支持的国内外研究现状）
+
+\section{选题的目的}
+（填写选题目的）
+
+\section{课题研究的意义}
+（填写课题研究意义）
+
+\section{研究的内容及方法}
+（填写研究内容及实际采用的方法）
+""",
         "chapters/20-body.tex": r"\chapter{正文}" "\n请在此填写论文主体内容。\n",
         "chapters/30-conclusion.tex": r"\yibinclosingchapter" "\n请在此填写结论与展望。\n",
         "chapters/90-appendix.tex": r"\begin{yibinappendices}" "\n% 需要附录时取消注释并填写内容。\n" r"% \yibinappendix{材料清单}" "\n" r"% \yibinappendixsection{说明}" "\n" r"\end{yibinappendices}" "\n",
@@ -155,11 +215,17 @@ def _body_files(document_type: str) -> Mapping[str, str]:
 
 
 def scaffold_files(args) -> dict[str, str]:
+    review_notes = """\n文献综述按封面、双语摘要、正文和参考文献装配，不生成目录。模板将中英文摘要排在同一页，正文从下一页开始；正文开头的引言不设标题，主题章连续排版，以“结论与展望”收尾。
+
+中文摘要 250 字、单段；英文摘要 100—200 词、单段，关键词 3—5 个且中英文一一对应。正文不少于 3000 字；参考文献不少于 20 篇，近五年文献占比不少于 50%。近五年的统计截止日和口径应在研究记录中明确，不沿用模板封面的示例年份。
+
+先在 metadata.tex 中填写真实题目、姓名、学部、所在地、邮编及导师资料，再替换正文占位并添加已核验文献。second-advisor 和 second-advisor-title 对应指导教师2；没有第二导师时留空。template-year 是版式版本，不是完成日期或文献出版年份。
+""" if args.document_type == "literature-review" else ""
     files = {
         "latex/main.tex": _main_tex(args.document_type, args.discipline),
         "latex/metadata.tex": metadata_tex(args, args.document_type),
         "latex/references.bib": "% Add verified references in GB/T 7714-2015 BibLaTeX format.\n",
-        "README.md": f"# 外部论文项目\n\n这是由 YibinThesis CLI 创建的 {args.document_type} LaTeX 项目。\n\n在本目录执行 yibinthesis check 或 yibinthesis build all。论文源文件位于 latex/。\n",
+        "README.md": f"# 外部论文项目\n\n这是由 YibinThesis CLI 创建的 {args.document_type} LaTeX 项目。\n\n在本目录执行 yibinthesis check 或 yibinthesis build all。论文源文件位于 latex/。\n{review_notes}",
         ".gitignore": "build/\n*.aux\n*.bbl\n*.bcf\n*.blg\n*.log\n*.run.xml\n*.synctex.gz\n",
         "latex/assets/.gitkeep": "",
     }

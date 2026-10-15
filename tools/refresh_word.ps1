@@ -311,43 +311,195 @@ function Assert-ProposalProfile {
 function Assert-LiteratureReviewProfile {
     param([Parameter(Mandatory = $true)]$Document)
 
-    if ($Document.Sections.Count -ne 2) {
-        throw "Literature-review section count expected 2, got $($Document.Sections.Count)"
+    if ($Document.Sections.Count -ne 4) {
+        throw "Literature-review section count expected 4 (cover, abstracts, body, references), got $($Document.Sections.Count)"
     }
-    if ($Document.Tables.Count -lt 1) {
-        throw 'Literature-review information page table was not found.'
-    }
-
-    $titles = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾综述-文档标题')
-    $thesisTitles = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾综述-论文题目')
-    $labels = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾综述-信息标签')
-    $values = @(Get-AppliedStyleParagraphs -Document $Document -StyleName '宜宾综述-信息值')
-    if ($titles.Count -ne 1) { throw "Literature-review title style count expected 1, got $($titles.Count)" }
-    if ($thesisTitles.Count -ne 1) {
-        throw "Literature-review thesis-title style count expected 1, got $($thesisTitles.Count)"
-    }
-    if ($labels.Count -lt 7) {
-        throw "Literature-review information-label style count expected at least 7, got $($labels.Count)"
-    }
-    if ($values.Count -lt 6) {
-        throw "Literature-review information-value style count expected at least 6, got $($values.Count)"
+    if ($Document.TablesOfContents.Count -ne 0) {
+        throw 'Literature-review must not contain a table of contents.'
     }
 
-    Assert-Text 'Literature-review title text' `
-        (Get-ParagraphText -Paragraph $titles[0]) `
-        '文献综述'
-    Assert-Font 'Literature-review title font' $titles[0].Range.Font.NameFarEast @('黑体', 'SimHei')
-    Assert-Near 'Literature-review title size' $titles[0].Range.Font.Size 28
-    if ($titles[0].Range.Font.Bold -eq 0) { throw 'Literature-review title must be bold.' }
-    if ($titles[0].Format.Alignment -ne 1) { throw 'Literature-review title must be centered.' }
+    $paragraphsByStyle = @{}
+    foreach ($paragraph in @($Document.Paragraphs)) {
+        $styleName = Get-StyleName -Paragraph $paragraph
+        if (-not $paragraphsByStyle.ContainsKey($styleName)) {
+            $paragraphsByStyle[$styleName] = [System.Collections.Generic.List[object]]::new()
+        }
+        $paragraphsByStyle[$styleName].Add($paragraph)
+    }
 
-    Assert-Font `
-        'Literature-review thesis-title font' `
-        $thesisTitles[0].Range.Font.NameFarEast `
-        @('黑体', 'SimHei')
-    Assert-Near 'Literature-review thesis-title size' $thesisTitles[0].Range.Font.Size 18
+    $singleParagraphs = @{}
+    $abstractStyles = @(
+        '宜宾综述-论文题目', '宜宾综述-作者', '宜宾综述-作者单位',
+        '宜宾综述-中文摘要标题', '宜宾综述-中文摘要正文', '宜宾综述-中文关键词',
+        '宜宾综述-英文摘要标题', '宜宾综述-英文摘要正文', '宜宾综述-英文关键词'
+    )
+    foreach ($styleName in @('宜宾综述-文档标题') + $abstractStyles) {
+        if (-not $paragraphsByStyle.ContainsKey($styleName) -or $paragraphsByStyle[$styleName].Count -ne 1) {
+            throw "Literature-review must contain exactly one '$styleName' paragraph."
+        }
+        $singleParagraphs[$styleName] = $paragraphsByStyle[$styleName][0]
+    }
+    if (-not $paragraphsByStyle.ContainsKey('宜宾综述-封面填写行') -or $paragraphsByStyle['宜宾综述-封面填写行'].Count -ne 7) {
+        throw 'Literature-review cover must contain seven native field paragraphs.'
+    }
+
+    function Assert-ReviewParagraphSection {
+        param($Paragraph, [int]$SectionIndex)
+        $sectionRange = $Document.Sections.Item($SectionIndex).Range
+        if ($Paragraph.Range.Start -lt $sectionRange.Start -or $Paragraph.Range.Start -ge $sectionRange.End) {
+            throw "Literature-review paragraph '$(Get-StyleName -Paragraph $Paragraph)' must be in section $SectionIndex."
+        }
+    }
+
+    function Get-ReviewPhysicalPage {
+        param($Paragraph, [switch]$AtEnd)
+        $position = if ($AtEnd) { [math]::Max($Paragraph.Range.Start, $Paragraph.Range.End - 1) } else { $Paragraph.Range.Start }
+        $pageRange = $Document.Range($position, $position)
+        try { return [int]$pageRange.Information(3) }
+        finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($pageRange) }
+    }
+
+    function Assert-ReviewCoverFont {
+        param([int]$Start, [int]$End, [switch]$Value)
+        $fieldRange = $Document.Range($Start, $End)
+        try {
+            $expectedSize = if ($Value) { 16 } else { 18 }
+            $expectedFonts = if ($Value) { @('宋体', 'SimSun') } else { @('黑体', 'SimHei') }
+            Assert-Near 'Literature-review cover field size' $fieldRange.Font.Size $expectedSize
+            Assert-Font 'Literature-review cover field font' $fieldRange.Font.NameFarEast $expectedFonts
+            if ($fieldRange.Font.Bold -ne -1) { throw 'Literature-review cover labels and values must resolve to bold.' }
+            $expectedUnderline = if ($Value) { 1 } else { 0 }
+            if ($fieldRange.Font.Underline -ne $expectedUnderline) {
+                throw 'Literature-review cover underlines must belong only to the value slots.'
+            }
+        }
+        finally { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($fieldRange) }
+    }
+
+    $documentTitle = $singleParagraphs['宜宾综述-文档标题']
+    Assert-ReviewParagraphSection $documentTitle 1
+    $documentTitleText = Get-ParagraphText -Paragraph $documentTitle
+    if ($documentTitleText -notin @('本科生毕业论文文献综述', '本科生毕业论文（设计）文献综述')) {
+        throw "Unexpected literature-review document title: $documentTitleText"
+    }
+    Assert-Near 'Literature-review document title size' $documentTitle.Range.Font.Size 28
+    if ($documentTitle.Format.Alignment -ne 1) { throw 'Literature-review document title must be centered.' }
+
+    $coverRows = $paragraphsByStyle['宜宾综述-封面填写行']
+    $coverLabels = @('题目', '学部（院）', '专业', '学生姓名', '学号', '指导教师1', '指导教师2')
+    $coverValues = @()
+    for ($index = 0; $index -lt $coverRows.Count; $index++) {
+        $paragraph = $coverRows[$index]
+        Assert-ReviewParagraphSection $paragraph 1
+        if ($paragraph.Range.Tables.Count -ne 0) { throw 'Literature-review cover fields must be native paragraphs, not a table.' }
+        $text = Get-ParagraphText -Paragraph $paragraph
+        $firstTab = $text.IndexOf("`t")
+        if ($firstTab -lt 1) { throw "Literature-review cover field $index is missing its label/value separator." }
+        Assert-Text 'Literature-review cover label' ($text.Substring(0, $firstTab) -replace '\s', '') $coverLabels[$index]
+        $start = [int]$paragraph.Range.Start
+        Assert-ReviewCoverFont -Start $start -End ($start + $firstTab)
+        $valueStart = $firstTab + 1
+        if ($index -lt 4) {
+            Assert-ReviewCoverFont -Start ($start + $valueStart) -End ($start + $text.Length) -Value
+            $coverValues += $text.Substring($valueStart).Trim()
+        }
+        else {
+            $secondLabel = if ($index -eq 4) { '年级' } else { '职称' }
+            $separator = "`t$secondLabel`t"
+            $separatorStart = $text.IndexOf($separator, $valueStart)
+            if ($separatorStart -lt 0) { throw "Literature-review cover field '$($coverLabels[$index])' must retain '$secondLabel' and its value slot." }
+            Assert-ReviewCoverFont -Start ($start + $valueStart) -End ($start + $separatorStart) -Value
+            Assert-ReviewCoverFont -Start ($start + $separatorStart + 1) -End ($start + $separatorStart + 1 + $secondLabel.Length)
+            Assert-ReviewCoverFont -Start ($start + $separatorStart + $separator.Length) -End ($start + $text.Length) -Value
+        }
+    }
+
+    $thesisTitle = $singleParagraphs['宜宾综述-论文题目']
+    Assert-Near 'Literature-review abstract-page title size' $thesisTitle.Range.Font.Size 16
+    Assert-Text 'Literature-review repeated thesis title' (Get-ParagraphText $thesisTitle) $coverValues[0]
+    Assert-Text 'Literature-review repeated author' (Get-ParagraphText $singleParagraphs['宜宾综述-作者']) $coverValues[3]
+    $affiliation = Get-ParagraphText $singleParagraphs['宜宾综述-作者单位']
+    if ($coverValues[1] -and -not $affiliation.StartsWith('（' + $coverValues[1])) {
+        throw 'Literature-review abstract affiliation must begin with the cover faculty.'
+    }
+    Assert-Text 'Literature-review Chinese abstract title' (Get-ParagraphText $singleParagraphs['宜宾综述-中文摘要标题']) '摘要'
+    Assert-Text 'Literature-review English abstract title' (Get-ParagraphText $singleParagraphs['宜宾综述-英文摘要标题']) 'Abstract'
+
+    $abstractPage = Get-ReviewPhysicalPage $thesisTitle
+    $previousStart = -1
+    foreach ($styleName in $abstractStyles) {
+        $paragraph = $singleParagraphs[$styleName]
+        Assert-ReviewParagraphSection $paragraph 2
+        if ($paragraph.Range.Start -le $previousStart) { throw 'Literature-review title, author, affiliation and bilingual abstracts are out of order.' }
+        $previousStart = $paragraph.Range.Start
+        if ((Get-ReviewPhysicalPage $paragraph) -ne $abstractPage -or (Get-ReviewPhysicalPage $paragraph -AtEnd) -ne $abstractPage) {
+            throw 'Literature-review title block and both abstracts must fit on the same page.'
+        }
+    }
+    foreach ($styleName in @('宜宾综述-论文题目', '宜宾综述-作者', '宜宾综述-作者单位')) {
+        if ($singleParagraphs[$styleName].Format.Alignment -ne 1) { throw "Literature-review '$styleName' must be centered." }
+    }
+
+    $bodyParagraphs = @(
+        foreach ($paragraph in @($Document.Sections.Item(3).Range.Paragraphs)) {
+            if (-not [string]::IsNullOrWhiteSpace((Get-ParagraphText $paragraph))) { $paragraph }
+        }
+    )
+    if ($bodyParagraphs.Count -eq 0 -or (Get-StyleName $bodyParagraphs[0]) -ne '宜宾综述-正文') {
+        throw 'Literature-review body must begin with an unheaded introduction paragraph.'
+    }
+    $bodyPage = Get-ReviewPhysicalPage $bodyParagraphs[0]
+    if ($bodyPage -ne $abstractPage + 1) { throw 'Literature-review introduction must start on the page after the bilingual abstracts.' }
+    $conclusionTitles = @($bodyParagraphs | Where-Object { (Get-ParagraphText $_) -eq '结论与展望' })
+    if ($conclusionTitles.Count -ne 1) {
+        throw 'Literature-review body is missing its conclusion and outlook heading.'
+    }
+    if ($conclusionTitles[0].Range.ListFormat.ListType -ne 0) {
+        throw 'Literature-review conclusion and outlook heading must be unnumbered.'
+    }
+    $chapterNumber = 0
+    $chapterLabels = @()
+    foreach ($paragraph in $bodyParagraphs) {
+        $styleName = Get-StyleName $paragraph
+        if ($styleName -match '^宜宾综述-[一二三四]级标题$') {
+            $listLabel = [string]$paragraph.Range.ListFormat.ListString
+            if ($paragraph.Range.ListFormat.ListType -eq 0 -or [string]::IsNullOrWhiteSpace($listLabel)) {
+                throw 'Literature-review numbered headings must retain visible native Word numbering.'
+            }
+            if ($styleName -eq '宜宾综述-一级标题') {
+                $chapterNumber++
+                if ($paragraph.Range.ListFormat.ListValue -ne $chapterNumber) {
+                    throw 'Literature-review chapter numbers must start at one and continue in order.'
+                }
+                $chapterLabels += $listLabel
+            }
+        }
+        if ($styleName -match '^宜宾综述-(?:[一二三四]级标题|无编号标题)$' -and $paragraph.Format.PageBreakBefore -ne 0) {
+            throw 'Literature-review body headings must remain in the continuous text flow.'
+        }
+    }
+
+    $referenceTitles = @(
+        foreach ($paragraph in @($Document.Sections.Item(4).Range.Paragraphs)) {
+            if ((Get-StyleName $paragraph) -eq '宜宾综述-无编号标题' -and (Get-ParagraphText $paragraph) -eq '参考文献') { $paragraph }
+        }
+    )
+    if ($referenceTitles.Count -ne 1) { throw 'Literature-review references must have one heading in the fourth section.' }
+    $referencePage = Get-ReviewPhysicalPage $referenceTitles[0]
+    if ($referencePage -le (Get-ReviewPhysicalPage $bodyParagraphs[-1] -AtEnd)) {
+        throw 'Literature-review references must start on a separate page.'
+    }
+
     Assert-PrimaryFooterPageNumbering -Document $Document -SectionIndex 1
     Assert-PrimaryFooterPageNumbering -Document $Document -SectionIndex 2 -ExpectedStart 1
+    foreach ($sectionIndex in 3..4) {
+        $footer = $Document.Sections.Item($sectionIndex).Footers.Item(1)
+        $pageFields = @($footer.Range.Fields | Where-Object { [string]$_.Code.Text -match '(?i)^\s*PAGE(?:\s|$)' })
+        if ($pageFields.Count -ne 1 -or [bool]$footer.PageNumbers.RestartNumberingAtSection) {
+            throw "Literature-review section $sectionIndex must continue Arabic page numbering with one PAGE field."
+        }
+    }
+    Write-Host "Literature-review audit: 7 cover fields; bilingual abstracts on page $abstractPage; body on page $bodyPage; references on page $referencePage; chapter labels '$($chapterLabels -join ' / ')'; conclusion unnumbered."
 }
 
 function Set-StyleFont {
@@ -1638,12 +1790,9 @@ try {
             )
         }
         'literature-review' {
-            @(
-                @('宜宾综述-文档标题', '黑体', 'Times New Roman', 28, $true),
-                @('宜宾综述-论文题目', '黑体', 'Times New Roman', 18, $true),
-                @('宜宾综述-信息标签', '黑体', 'Times New Roman', 18, $true),
-                @('宜宾综述-信息值', '宋体', 'Times New Roman', 16, $true)
-            )
+            # Python's reference document owns the review styles, including
+            # inherited cover bold and the 16 pt abstract-page title.
+            @()
         }
         default { @() }
     }

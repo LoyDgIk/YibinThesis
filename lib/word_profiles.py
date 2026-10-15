@@ -14,7 +14,11 @@ def bind_core(core):
         "_postprocess_review_docx",
     }
     for name in dir(core):
-        if name not in {"bind_core", "sys"} and name not in profile_functions:
+        if (
+            not name.startswith("__")
+            and name not in {"bind_core", "sys"}
+            and name not in profile_functions
+        ):
             setattr(module, name, getattr(core, name))
     return module
 
@@ -119,9 +123,13 @@ def _insert_proposal_cover(
     main_dir: Path,
     metadata_dir: Path,
 ) -> None:
-    """Insert the filled sample's cover block before the page-4 form."""
+    """Insert the proposal cover as the sample's native paragraph layout.
 
-    _calibrate_cover_styles(document)
+    The 2022 work-sheet cover is not a collection of layout tables.  It is a
+    sequence of centred paragraphs followed by five tabbed, underlined field
+    paragraphs.  Keeping that structure is important: Word lays out the
+    underlined slots and long titles differently when they are put in tables.
+    """
 
     try:
         logo = _resolve_cover_logo(
@@ -135,50 +143,70 @@ def _insert_proposal_cover(
         # Unit fixtures and external profile callers may intentionally omit
         # the optional logo; keep the textual cover usable in that case.
         logo = None
-    logo_paragraph = document.add_paragraph(style="CoverLogo")
+    logo_paragraph = document.add_paragraph()
     logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    logo_paragraph.paragraph_format.space_before = Pt(0)
+    logo_paragraph.paragraph_format.space_after = Pt(12)
+    logo_paragraph.paragraph_format.line_spacing = 1.0
     if logo is not None:
         logo_paragraph.add_run().add_picture(str(logo), width=Cm(13.15), height=Cm(3.65))
     else:
         run = logo_paragraph.add_run("宜宾学院")
         _set_run_fonts(run, "SimHei", "Times New Roman", 26, bold=True)
-    title = document.add_paragraph(style="CoverThesisType")
+
+    document.add_paragraph().paragraph_format.line_spacing = 1.0
+    title = document.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title.add_run("本科生毕业论文")
-    paper_title = document.add_paragraph(style="CoverTitle")
+    title.paragraph_format.line_spacing = 2.0
+    title.paragraph_format.space_after = Pt(12)
+    _set_run_fonts(title.add_run("本科生毕业论文"), "SimHei", "SimHei", 28, bold=True)
+
+    document.add_paragraph().paragraph_format.line_spacing = 1.0
+    paper_title = document.add_paragraph()
     paper_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    paper_title.paragraph_format.space_after = Pt(8)
-    paper_title.paragraph_format.line_spacing = 1.5
+    paper_title.paragraph_format.space_after = Pt(0)
+    paper_title.paragraph_format.line_spacing = 2.0
     title_run = paper_title.add_run(metadata.get("title", "（填写中文题目）"))
-    _set_run_fonts(title_run, "SimHei", "SimHei", 18, bold=True, underline=True)
-    proposal_type = document.add_paragraph(style=STYLE_PROPOSAL_SUBTITLE)
+    _set_run_fonts(title_run, "SimSun", "Times New Roman", 18, bold=False, underline=False)
+
+    proposal_type = document.add_paragraph()
     proposal_type.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    proposal_type.paragraph_format.line_spacing = 2.0
     proposal_type.paragraph_format.space_before = Pt(0)
-    proposal_type.paragraph_format.space_after = Pt(18)
-    proposal_type.add_run("开题报告")
-    date = document.add_paragraph(style=STYLE_REVIEW_DATE)
+    proposal_type.paragraph_format.space_after = Pt(24)
+    _set_run_fonts(proposal_type.add_run("开题报告"), "SimHei", "SimHei", 18, bold=True)
+
+    # Centre the whole heading block on the widest information row (8743
+    # twips), without inheriting Normal's two-character first-line indent.
+    for paragraph in (logo_paragraph, title, paper_title, proposal_type):
+        indent = paragraph._p.get_or_add_pPr().get_or_add_ind()
+        for attribute in ("left", "leftChars", "firstLine", "firstLineChars"):
+            indent.set(qn(f"w:{attribute}"), "0")
+        indent.set(qn("w:right"), "45")
+
+    date = document.add_paragraph()
     date.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    date.paragraph_format.space_before = Pt(14)
-    date.add_run(metadata.get("date", ""))
-    cover_anchor = date
+    date.paragraph_format.space_before = Pt(132)
+    date.paragraph_format.line_spacing = 1.0
+    _set_run_fonts(date.add_run(metadata.get("date", "")), "SimSun", "Times New Roman", 15, bold=True)
 
     _insert_cover_table(
-        document, cover_anchor,
-        [("label", "学院（部）", 3.4925), ("value", metadata.get("college", ""), 11.6121)],
+        document, date,
+        [("label", "学部（院）", 3.4925), ("value", metadata.get("college", ""), 11.6121)],
         row_height_pt=34.0,
     )
     _insert_cover_table(
-        document, cover_anchor,
+        document, date,
         [("label", "专    业", 3.4925), ("value", metadata.get("major", ""), 11.9296)],
         row_height_pt=34.0,
     )
     _insert_cover_table(
-        document, cover_anchor,
+        document, date,
         [("label", "学生姓名", 3.1750), ("value", metadata.get("author", ""), 11.9296)],
         row_height_pt=34.0,
     )
     _insert_cover_table(
-        document, cover_anchor,
+        document, date,
         [
             ("label", "学    号", 3.1750),
             ("value", metadata.get("student-id", ""), 5.6686),
@@ -187,16 +215,15 @@ def _insert_proposal_cover(
         ],
         row_height_pt=34.0,
     )
-    _insert_cover_table(
-        document, cover_anchor,
-        [
-            ("label", "指导教师", 3.1750),
-            ("value", metadata.get("advisor", ""), 5.6686),
-            ("label", "职称", 1.5875),
-            ("value", metadata.get("advisor-title", ""), 4.5367),
-        ],
-        row_height_pt=34.0,
-    )
+    advisor = metadata.get("advisor", "")
+    advisor_title = metadata.get("advisor-title", "")
+    advisor_cells = [
+        ("label", "指导教师", 3.1750),
+        ("value", advisor, 5.6686),
+        ("label", "职称", 1.5875),
+        ("value", advisor_title, 4.5367),
+    ]
+    _insert_cover_table(document, date, advisor_cells, row_height_pt=34.0)
 
 
 def _append_proposal_table(
@@ -288,6 +315,19 @@ def _append_proposal_table(
             signature.add_run("    年    月    日")
 
 
+def _configure_proposal_heading_styles(document: Document, discipline: str) -> None:
+    """Apply the field outline without thesis chapter pagination."""
+    for name in (STYLE_HEADING_1, STYLE_HEADING_2, STYLE_HEADING_3, STYLE_HEADING_4):
+        style = document.styles[name]
+        style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        style.paragraph_format.page_break_before = False
+        style.paragraph_format.keep_with_next = True
+        style.paragraph_format.keep_together = True
+        indent = style.element.get_or_add_pPr().get_or_add_ind()
+        indent.set(qn("w:firstLineChars"), "0" if discipline == "science" else "200")
+        indent.set(qn("w:firstLine"), "0" if discipline == "science" else str(round(style.font.size.pt * 40)))
+
+
 def _postprocess_proposal_docx(
     input_docx: Path,
     output_docx: Path,
@@ -311,7 +351,7 @@ def _postprocess_proposal_docx(
             paragraph._p.getparent().remove(paragraph._p)
     heading_abstract_id = _apply_common_body_formatting(
         document,
-        discipline="humanities",
+        discipline=discipline,
         labels=labels,
         citations=citations,
         citation_mode=citation_mode,
@@ -319,6 +359,7 @@ def _postprocess_proposal_docx(
         word_figure_sequence=word_figure_sequence,
         word_table_sequence=word_table_sequence,
     )
+    _configure_proposal_heading_styles(document, discipline)
     field_nodes = _extract_marker_ranges(document)
     signature_background = metadata.get("signature-background", "preserve").strip().casefold()
     if signature_background not in {"preserve", "whiten"}:
@@ -340,9 +381,9 @@ def _postprocess_proposal_docx(
         main_dir=main_dir,
         metadata_dir=metadata_dir,
     )
-    # The supplied sample has a separate cover section and starts the form on
-    # the page numbered 4. Keep the form's existing marker content after the
-    # break so long fields can still flow naturally.
+    # The standalone opening report keeps the cover in its own unnumbered
+    # section, so the form itself starts at page 1. Keep the form's existing
+    # marker content after the break so long fields can still flow naturally.
     document.add_section(WD_SECTION_START.NEW_PAGE)
 
     title = document.add_paragraph(style=STYLE_PROPOSAL_TITLE)
@@ -364,8 +405,8 @@ def _postprocess_proposal_docx(
     cover.start_type = WD_SECTION_START.NEW_PAGE
     cover.page_width = Cm(21)
     cover.page_height = Cm(29.7)
-    cover.top_margin = Cm(2.5)
-    cover.bottom_margin = Cm(2.5)
+    cover.top_margin = Pt(45)
+    cover.bottom_margin = Pt(45)
     cover.left_margin = Cm(3.0)
     cover.right_margin = Cm(2.5)
     cover.header_distance = Cm(1.5)
@@ -385,7 +426,7 @@ def _postprocess_proposal_docx(
     section.footer_distance = Pt(49.6)
     section.header.is_linked_to_previous = False
     _clear_story(section.header)
-    _set_page_number_format(section, "decimal", 4)
+    _set_page_number_format(section, "decimal", 1)
     _add_profile_page_field(section, document)
 
     document.core_properties.title = metadata.get("title", "")
@@ -422,6 +463,39 @@ def _set_single_cell_paragraph(cell, document: Document, style_name: str, value:
     return paragraph
 
 
+def _insert_review_cover_field(
+    document: Document,
+    anchor,
+    label: str,
+    value: str,
+    *,
+    second_label: str = "",
+    second_value: str = "",
+    wrap_value: bool = False,
+) -> None:
+    """Use native paragraph tabs; underline only the editable value slots."""
+    paragraph = _insert_paragraph_before(document, anchor, STYLE_REVIEW_COVER_FIELD)
+    stops = ((3.7, "left"), (15.5, "right")) if wrap_value else (
+        ((3.7, "left"), (6.35, "center"), (9.0, "right"),
+         (9.3, "left"), (10.9, "left"), (13.2, "center"), (15.5, "right"))
+        if second_label
+        else ((3.7, "left"), (9.6, "center"), (15.5, "right"))
+    )
+    if wrap_value:
+        paragraph.paragraph_format.left_indent = Cm(3.7)
+        paragraph.paragraph_format.first_line_indent = -Cm(3.7)
+    _set_tabs(paragraph, [(Cm(position).twips, alignment, None) for position, alignment in stops])
+    label_run = paragraph.add_run(label + "\t")
+    label_run.style = document.styles[STYLE_REVIEW_COVER_LABEL]
+    value_run = paragraph.add_run(("" if wrap_value else "\t") + value.strip() + "\t")
+    value_run.style = document.styles[STYLE_REVIEW_COVER_VALUE]
+    if second_label:
+        second_label_run = paragraph.add_run("\t" + second_label + "\t")
+        second_label_run.style = document.styles[STYLE_REVIEW_COVER_LABEL]
+        second_value_run = paragraph.add_run("\t" + second_value.strip() + "\t")
+        second_value_run.style = document.styles[STYLE_REVIEW_COVER_VALUE]
+
+
 def _insert_review_cover(
     document: Document,
     anchor,
@@ -444,6 +518,8 @@ def _insert_review_cover(
         logo = None
     logo_paragraph = _insert_paragraph_before(document, anchor, "CoverLogo")
     logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    logo_paragraph.paragraph_format.space_before = Pt(0)
+    logo_paragraph.paragraph_format.space_after = Pt(12)
     if logo is not None:
         logo_paragraph.add_run().add_picture(str(logo), width=Cm(13.15), height=Cm(3.65))
     heading = _insert_paragraph_before(document, anchor, STYLE_REVIEW_DOCUMENT_TITLE)
@@ -452,61 +528,81 @@ def _insert_review_cover(
         if discipline == "science"
         else "本科生毕业论文文献综述"
     )
-    thesis_title = _insert_paragraph_before(document, anchor, STYLE_REVIEW_THESIS_TITLE)
-    thesis_title.text = metadata.get("title", "")
-
-    table = document.add_table(rows=5, cols=4)
-    anchor._p.addprevious(table._tbl)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
-    table.autofit = False
-    _set_fixed_table_geometry(
-        table,
-        (3.2, 5.7, 1.6, 5.0),
-        style_name=STYLE_REVIEW_INFO_TABLE,
-    )
-    _set_table_borders_none(table)
     rows = (
-        ("学院（部）", metadata.get("college", ""), "", ""),
-        ("专    业", metadata.get("major", ""), "", ""),
-        ("学生姓名", metadata.get("author", ""), "", ""),
-        ("学    号", metadata.get("student-id", ""), "年级", format_grade_class(metadata)),
-        ("指导教师", metadata.get("advisor", ""), "职称", metadata.get("advisor-title", "")),
+        ("题    目", metadata.get("title", "")),
+        ("学部（院）", metadata.get("college", "")),
+        ("专    业", metadata.get("major", "")),
+        ("学生姓名", metadata.get("author", "")),
     )
-    for row_index in range(3):
-        merged = table.cell(row_index, 1).merge(table.cell(row_index, 3))
-        _set_single_cell_paragraph(
-            table.cell(row_index, 0),
-            document,
-            STYLE_REVIEW_INFO_LABEL,
-            rows[row_index][0],
-        )
-        _set_single_cell_paragraph(
-            merged,
-            document,
-            STYLE_REVIEW_INFO_VALUE,
-            rows[row_index][1],
-        )
-
-    for row_index in range(3, 5):
-        for column_index, value in enumerate(rows[row_index]):
-            _set_single_cell_paragraph(
-                table.cell(row_index, column_index),
-                document,
-                (
-                    STYLE_REVIEW_INFO_LABEL
-                    if column_index % 2 == 0
-                    else STYLE_REVIEW_INFO_VALUE
-                ),
-                value,
-            )
-
-    for row in table.rows:
-        row.height = Pt(34)
-        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
-
+    for label, value in rows:
+        _insert_review_cover_field(document, anchor, label, value, wrap_value=label == "题    目")
+    _insert_review_cover_field(
+        document, anchor, "学    号", metadata.get("student-id", ""),
+        second_label="年级", second_value=format_grade_class(metadata),
+    )
+    _insert_review_cover_field(
+        document, anchor, "指导教师1", metadata.get("advisor", ""),
+        second_label="职称", second_value=metadata.get("advisor-title", ""),
+    )
+    _insert_review_cover_field(
+        document, anchor, "指导教师2",
+        metadata.get("second-advisor", metadata.get("external-advisor", "")),
+        second_label="职称",
+        second_value=metadata.get("second-advisor-title", metadata.get("external-advisor-title", "")),
+    )
     date = _insert_paragraph_before(document, anchor, STYLE_REVIEW_DATE)
     date.text = metadata.get("date", "")
-    date.paragraph_format.space_before = Pt(68)
+
+
+def _insert_review_front_matter(document: Document, anchor, metadata: dict[str, str]) -> None:
+    affiliation = " ".join(
+        metadata.get(key, "").strip()
+        for key in ("college", "affiliation-city", "affiliation-postcode")
+        if metadata.get(key, "").strip()
+    )
+    for style, text in (
+        (STYLE_REVIEW_THESIS_TITLE, metadata.get("title", "")),
+        (STYLE_REVIEW_AUTHOR, metadata.get("author", "")),
+        (STYLE_REVIEW_AFFILIATION, f"（{affiliation}）" if affiliation else ""),
+    ):
+        _insert_paragraph_before(document, anchor, style).text = text
+
+
+def _apply_review_styles(document: Document, discipline: str) -> None:
+    """Keep the review's abstract page and flowing outline separate from thesis styles."""
+    style_map = {
+        STYLE_BODY: STYLE_REVIEW_BODY,
+        STYLE_FIRST_PARAGRAPH: STYLE_REVIEW_BODY,
+        STYLE_HEADING_1: STYLE_REVIEW_HEADING_1,
+        STYLE_HEADING_2: STYLE_REVIEW_HEADING_2,
+        STYLE_HEADING_3: STYLE_REVIEW_HEADING_3,
+        STYLE_HEADING_4: STYLE_REVIEW_HEADING_4,
+        STYLE_UNNUMBERED_HEADING: STYLE_REVIEW_UNNUMBERED_HEADING,
+        STYLE_FRONT_TITLE: STYLE_REVIEW_ABSTRACT_TITLE,
+        STYLE_ENGLISH_ABSTRACT_TITLE: STYLE_REVIEW_ENGLISH_ABSTRACT_TITLE,
+        STYLE_CHINESE_ABSTRACT: STYLE_REVIEW_CHINESE_ABSTRACT,
+        STYLE_ENGLISH_ABSTRACT: STYLE_REVIEW_ENGLISH_ABSTRACT,
+        STYLE_KEYWORDS: STYLE_REVIEW_KEYWORDS,
+        STYLE_BIBLIOGRAPHY: STYLE_REVIEW_BIBLIOGRAPHY,
+    }
+    for paragraph in document.paragraphs:
+        target = style_map.get(paragraph.style.name)
+        if target == STYLE_REVIEW_KEYWORDS and paragraph.text.startswith("Keywords:"):
+            target = STYLE_REVIEW_ENGLISH_KEYWORDS
+        if target:
+            paragraph.style = document.styles[target]
+    heading_styles = (
+        STYLE_REVIEW_HEADING_1, STYLE_REVIEW_HEADING_2,
+        STYLE_REVIEW_HEADING_3, STYLE_REVIEW_HEADING_4,
+    )
+    for style_name in heading_styles:
+        style = document.styles[style_name]
+        style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        style.paragraph_format.page_break_before = False
+        indent = style.element.get_or_add_pPr().get_or_add_ind()
+        indent.set(qn("w:firstLineChars"), "0" if discipline == "science" else "200")
+        indent.set(qn("w:firstLine"), "0" if discipline == "science" else str(round(style.font.size.pt * 40)))
+    _configure_heading_numbering(document, discipline, style_names=heading_styles)
 
 
 def _postprocess_review_docx(
@@ -543,12 +639,14 @@ def _postprocess_review_docx(
         (p for p in document.paragraphs if p.text.strip() == SECTION_REVIEW_REFERENCES),
         None,
     )
-    tail_marker = next(
-        (p for p in document.paragraphs if p.text.strip() == SECTION_REVIEW_TAIL),
+    abstract_marker = next(
+        (p for p in document.paragraphs if p.text.strip() == SECTION_REVIEW_ABSTRACT_END),
         None,
     )
-    if references_marker is None or tail_marker is None:
-        raise BuildError("文献综述参考文献或尾部分节标记缺失。")
+    if references_marker is None or abstract_marker is None:
+        raise BuildError("文献综述摘要或参考文献分节标记缺失。")
+    paragraphs = document.paragraphs
+    first_abstract = paragraphs[next(i for i, p in enumerate(paragraphs) if p._p is marker._p) + 1]
     _insert_review_cover(
         document,
         marker,
@@ -558,9 +656,10 @@ def _postprocess_review_docx(
         metadata_dir=metadata_dir,
         discipline=discipline,
     )
+    _insert_review_front_matter(document, first_abstract, metadata)
     _add_section_break(marker, body_sect_pr, None)
+    _add_section_break(abstract_marker, body_sect_pr, None)
     _add_section_break(references_marker, body_sect_pr, None)
-    _add_section_break(tail_marker, body_sect_pr, None)
     _apply_common_body_formatting(
         document,
         discipline=discipline,
@@ -571,14 +670,15 @@ def _postprocess_review_docx(
         word_figure_sequence=word_figure_sequence,
         word_table_sequence=word_table_sequence,
     )
+    _apply_review_styles(document, discipline)
     stage = output_docx.with_suffix(".review-sections.docx")
     document.save(stage)
     document = Document(stage)
     if len(document.sections) != 4:
         stage.unlink(missing_ok=True)
         raise BuildError(f"文献综述应生成 4 个 Word 分节，实际为 {len(document.sections)}。")
-    cover, body, references, tail = document.sections
-    for section in (cover, body, references, tail):
+    cover, abstracts, body, references = document.sections
+    for section in (cover, abstracts, body, references):
         section.start_type = WD_SECTION_START.NEW_PAGE
         section.page_width = Cm(21)
         section.page_height = Cm(29.7)
@@ -593,9 +693,9 @@ def _postprocess_review_docx(
         _clear_story(section.header)
         _clear_story(section.footer)
     _set_page_number_format(cover, None)
-    _set_page_number_format(body, "decimal", 1)
+    _set_page_number_format(abstracts, "decimal", 1)
+    _set_page_number_format(body, "decimal")
     _set_page_number_format(references, "decimal")
-    _set_page_number_format(tail, "decimal")
     body_header = body.header.paragraphs[0]
     body_header.style = document.styles["Header"]
     body_header.text = metadata.get("title", "")
@@ -603,9 +703,9 @@ def _postprocess_review_docx(
     _add_header_border(body_header)
     for run in body_header.runs:
         _set_run_fonts(run, "SimSun", "Times New Roman", 9)
+    _add_profile_page_field(abstracts, document)
     _add_profile_page_field(body, document)
     _add_profile_page_field(references, document)
-    _add_profile_page_field(tail, document)
 
     document.core_properties.title = metadata.get("title", "")
     document.core_properties.author = metadata.get("author", "")
@@ -703,8 +803,8 @@ def _build_non_thesis(
                 field_text = normalize_proposal_latex(field_text)
                 detect_unsupported(field_text, main_path, warnings)
                 # Each official form field is an independent outline.  A
-                # ``\section`` inside every cell must therefore start at
-                # （一） instead of continuing from the previous field.
+                # ``\section`` inside every cell is level one and starts at
+                # 一、 or 1 instead of continuing from the previous field.
                 field_counters = HeadingCounters()
                 chapter_before = field_counters.chapter
                 converted = latex_to_markdown(
@@ -721,15 +821,17 @@ def _build_non_thesis(
                     temp_dir=temp_dir,
                     name=f"proposal-{index}-{key}",
                 )
-                converted = demote_proposal_headings(converted)
+                converted = normalize_proposal_headings(converted)
                 converted = apply_heading_numbering(
                     converted,
-                    "humanities",
+                    profile.discipline,
                     field_counters,
                     labels,
                 )
                 converted = apply_float_numbering(
                     converted,
+                    # Figures and tables retain their document-wide sequence;
+                    # only the field's heading outline restarts.
                     "humanities",
                     chapter_before,
                     float_counters,
@@ -755,6 +857,9 @@ def _build_non_thesis(
             markdown_parts.append(styled_marker(SECTION_REVIEW_COVER_END))
             events = parse_main_events(main_text)
             bibliography_inserted = False
+            expected_abstracts = ["cnabstract", "enabstract"]
+            abstracts_seen: list[str] = []
+            body_started = False
             for index, event in enumerate(events):
                 if event.kind in {
                     "frontmatter",
@@ -778,6 +883,40 @@ def _build_non_thesis(
                         project_root,
                         allow_project_fallback=allow_project_fallback,
                     )
+                    # An explicit --metadata replaces the values, not the
+                    # original setup input's role in the source entry point.
+                    if find_command_argument(strip_tex_comments(text), "yibinsetup") is not None:
+                        continue
+                    environments = [
+                        environment for environment in expected_abstracts
+                        if extract_environment(text, environment) is not None
+                    ]
+                    if environments:
+                        pending = abstracts_seen + environments
+                        if body_started or pending != expected_abstracts[:len(pending)]:
+                            raise BuildError("文献综述须按中文摘要、英文摘要、正文的顺序组织，摘要不能重复。")
+                        remainder = strip_tex_comments(text)
+                        for environment in environments:
+                            pattern = r"\\begin\s*\{" + environment + r"\}.*?\\end\s*\{" + environment + r"\}"
+                            remainder, count = re.subn(pattern, "", remainder, flags=re.DOTALL)
+                            if count != 1:
+                                raise BuildError("文献综述摘要文件不能重复同一摘要环境。")
+                        if remainder.strip():
+                            raise BuildError("文献综述摘要文件不能混入正文；请把摘要环境以外的内容放入独立正文文件。")
+                        for environment in environments:
+                            markdown_parts.append(abstract_markdown(
+                                text, environment=environment, pandoc=pandoc,
+                                cwd=main_dir, temp_dir=temp_dir, notes=notes,
+                                discipline=profile.discipline, labels=labels,
+                                citations=citations, table_layouts=table_layouts,
+                            ))
+                        abstracts_seen = pending
+                        continue
+                    if not body_started:
+                        if abstracts_seen != expected_abstracts:
+                            raise BuildError("文献综述正文前须提供 cnabstract 和 enabstract 中英文摘要。")
+                        markdown_parts.append(styled_marker(SECTION_REVIEW_ABSTRACT_END))
+                        body_started = True
                     detect_unsupported(text, source, warnings)
                     chapter_before = counters.chapter
                     converted = latex_to_markdown(
@@ -799,6 +938,7 @@ def _build_non_thesis(
                         profile.discipline,
                         counters,
                         labels,
+                        unnumbered_style=STYLE_REVIEW_UNNUMBERED_HEADING,
                     )
                     converted = apply_float_numbering(
                         converted,
@@ -816,19 +956,22 @@ def _build_non_thesis(
                 elif event.kind == "nocite" and event.value:
                     citations.add_nocite(event.value)
                 elif event.kind == "printyibinbibliography":
+                    if not body_started:
+                        raise BuildError("文献综述参考文献前须提供中英文摘要和正文。")
                     seed = citation_seed_markdown(citations)
                     if seed:
                         markdown_parts.append(seed)
                     markdown_parts.append(styled_marker(SECTION_REVIEW_REFERENCES))
                     markdown_parts.append(bibliography_markdown())
                     bibliography_inserted = True
+            if not body_started:
+                raise BuildError("文献综述须提供中英文摘要和正文文件。")
             if not bibliography_inserted:
                 seed = citation_seed_markdown(citations)
                 if seed:
                     markdown_parts.append(seed)
                 markdown_parts.append(styled_marker(SECTION_REVIEW_REFERENCES))
                 markdown_parts.append(bibliography_markdown())
-            markdown_parts.append(styled_marker(SECTION_REVIEW_TAIL))
 
         assembled = "\n\n".join(part for part in markdown_parts if part.strip()) + "\n"
         assembled = labels.resolve(assembled)
@@ -846,8 +989,9 @@ def _build_non_thesis(
             temp_dir=temp_dir,
         )
         bibliography_items: list[dict[str, object]] = []
-        if citeproc_bibliography.suffix.lower() == ".json":
-            parsed_items = json.loads(citeproc_bibliography.read_text(encoding="utf-8"))
+        bibliography_json = citeproc_bibliography.with_suffix(".json") if citeproc_bibliography != bibliography else citeproc_bibliography
+        if bibliography_json.suffix.lower() == ".json":
+            parsed_items = json.loads(bibliography_json.read_text(encoding="utf-8"))
             if isinstance(parsed_items, list):
                 bibliography_items = [
                     item for item in parsed_items if isinstance(item, dict)

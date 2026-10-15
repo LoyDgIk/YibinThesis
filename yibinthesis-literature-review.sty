@@ -1,9 +1,58 @@
 % !TeX root = main.tex
 \NeedsTeXFormat{LaTeX2e}[2020-10-01]
 \ProvidesPackage{yibinthesis-literature-review}
-  [2026/07/18 v0.1 Yibin University literature-review module]
+  [2026/10/09 v0.2 Yibin University literature-review module]
 
 \makeatletter
+
+% Give TeX a final line-breaking pass for long technical terms and citations.
+\setlength{\emergencystretch}{2em}
+
+% The review is a flowing article: numbered chapters do not start new pages.
+% These overrides are loaded only by the literature-review class option.
+\titleclass{\chapter}{straight}
+\titleformat{\chapter}[block]
+  {\yibinhei\bfseries\zihao{3}}
+  {\thechapter}{0.5em}{}
+\ifyibin@science
+  \titlespacing{\chapter}{0pt}{18pt}{12pt}
+  \titlespacing{\section}{0pt}{18pt}{12pt}
+  \titlespacing{\subsection}{0pt}{15pt}{9pt}
+  \titlespacing{\subsubsection}{0pt}{12pt}{6pt}
+\else
+  \titlespacing{\chapter}{2em}{18pt}{12pt}
+  \titlespacing{\section}{2em}{18pt}{12pt}
+  \titlespacing{\subsection}{2em}{15pt}{9pt}
+  \titlespacing{\subsubsection}{2em}{12pt}{6pt}
+\fi
+\titleformat{name=\chapter,numberless}[block]
+  {\centering\yibinhei\bfseries\zihao{3}}
+  {}{0pt}{}
+\titlespacing{name=\chapter,numberless}{0pt}{18pt}{12pt}
+
+\RenewDocumentCommand{\yibinclosingchapter}{O{结论与展望}}{%
+  \chapter*{#1}%
+  \markboth{#1}{#1}%
+}
+
+% Both review templates show continuous figure and table numbers.
+\counterwithout{figure}{chapter}
+\counterwithout{table}{chapter}
+
+% setspace reapplies the current size.  Select the required five-size text
+% after the stretch factor so bibliography entries remain 10.5 pt.
+\ifyibin@bibliography
+  \AtBeginBibliography{\setstretch{1.5}\yibinsong\zihao{5}}
+\fi
+
+% A separate value paragraph allows a long title to wrap at the template's
+% 16 pt size while keeping the 18 pt label and the following fields intact.
+\newcommand{\yibin@reviewcovertitle}{%
+  \noindent\yibin@coverlabel{3.7cm}{题\hspace{2em}目}%
+  \parbox[t]{11.8cm}{%
+    \setstretch{1}\yibinsong\bfseries\fontsize{16bp}{32bp}\selectfont%
+    \centering\CJKunderline{\strut\yibintitle\hfill\strut}\par}%
+}
 
 \NewDocumentCommand{\makeyibinliteraturereviewcover}{}{%
   \ifyibin@literaturereview\else
@@ -15,38 +64,110 @@
   \thispagestyle{empty}
   \begingroup
     \setlength{\parindent}{0pt}%
-    \yibinprofilelogo{1.4cm}
-    \begin{textblock*}{15cm}(3cm,3.0cm)
+    \yibinprofilelogo{2.5cm}
+    \begin{textblock*}{15.5cm}(3cm,7.0cm)
       \centering\yibinhei\bfseries\fontsize{28bp}{34bp}\selectfont
       \ifyibin@science 本科生毕业论文（设计）文献综述\else 本科生毕业论文文献综述\fi
     \end{textblock*}
-    \begin{textblock*}{15cm}(3cm,7.1cm)
-      \centering\yibinhei\bfseries\fontsize{18bp}{26bp}\selectfont
-      \parbox{14cm}{\centering\yibintitle}
+    \begin{textblock*}{15.5cm}(3cm,10.0cm)
+      \yibin@reviewcovertitle
     \end{textblock*}
-    \begin{textblock*}{15.5cm}(3cm,12.5cm)
-      \yibin@coverfield{学院（部）}{3.5cm}{11.6cm}{\yibincollege}
+    \begin{textblock*}{15.5cm}(3cm,12.4cm)
+      \yibin@coverfield{学部（院）}{3.7cm}{11.8cm}{\yibincollege}
     \end{textblock*}
-    \begin{textblock*}{15.5cm}(3cm,14.1cm)
-      \yibin@coverfield{专\hspace{2em}业}{3.5cm}{11.6cm}{\yibinmajor}
+    \begin{textblock*}{15.5cm}(3cm,14.0cm)
+      \yibin@coverfield{专\hspace{2em}业}{3.7cm}{11.8cm}{\yibinmajor}
     \end{textblock*}
-    \begin{textblock*}{15.5cm}(3cm,15.7cm)
-      \yibin@coverfield{学生姓名}{3.2cm}{11.9cm}{\yibinauthor}
+    \begin{textblock*}{15.5cm}(3cm,15.6cm)
+      \yibin@coverfield{学生姓名}{3.7cm}{11.8cm}{\yibinauthor}
     \end{textblock*}
-    \begin{textblock*}{15.5cm}(3cm,17.3cm)
-      \yibin@coverdualfield{学\hspace{2em}号}{3.2cm}{5.6cm}{\yibinstudentid}%
-        {年级}{1.6cm}{4.5cm}{\yibingradeclass}
+    \begin{textblock*}{15.5cm}(3cm,17.2cm)
+      \yibin@coverdualfield{学\hspace{2em}号}{3.7cm}{5.3cm}{\yibinstudentid}%
+        {\hspace{0.3cm}年级}{1.9cm}{4.6cm}{\yibingradeclass}
     \end{textblock*}
-    \begin{textblock*}{15.5cm}(3cm,18.9cm)
-      \yibin@coverdualfield{指导教师}{3.2cm}{5.6cm}{\yibinadvisor}%
-        {职称}{1.6cm}{4.5cm}{\yibinadvisortitle}
+    \begin{textblock*}{15.5cm}(3cm,18.8cm)
+      \yibin@coverdualfield{指导教师1}{3.7cm}{5.3cm}{\yibinadvisor}%
+        {\hspace{0.3cm}职称}{1.9cm}{4.6cm}{\yibinadvisortitle}
     \end{textblock*}
-    \begin{textblock*}{15cm}(3cm,22.2cm)
-      \centering\yibinsong\fontsize{14bp}{20bp}\selectfont \yibindate
+    \begin{textblock*}{15.5cm}(3cm,20.4cm)
+      \yibin@coverdualfield{指导教师2}{3.7cm}{5.3cm}{\yibinsecondadvisor}%
+        {\hspace{0.3cm}职称}{1.9cm}{4.6cm}{\yibinsecondadvisortitle}
+    \end{textblock*}
+    \begin{textblock*}{15.5cm}(3cm,24.0cm)
+      \centering\yibinsong\bfseries\zihao{-3}%
+      \yibinifdate{\yibindate}{%
+        \underline{\makebox[1.5cm]{\strut}}年\quad
+        \underline{\makebox[1cm]{\strut}}月\quad
+        \underline{\makebox[1cm]{\strut}}日}%
     \end{textblock*}
     \null
   \endgroup
-  \mainmatter
+  \frontmatter
+  \pagenumbering{arabic}
+}
+
+\ExplSyntaxOn
+\NewDocumentCommand{\yibin@reviewaffiliation}{}{
+  \seq_clear:N \l_tmpa_seq
+  \clist_map_inline:nn {
+    g_yibin_college_tl,
+    g_yibin_affiliation_city_tl,
+    g_yibin_affiliation_postcode_tl
+  } {
+    \tl_if_empty:cF {##1} {\seq_put_right:Nv \l_tmpa_seq {##1}}
+  }
+  \seq_if_empty:NF \l_tmpa_seq {（\seq_use:Nn \l_tmpa_seq {\quad}）}
+}
+\ExplSyntaxOff
+
+\newcommand{\yibin@reviewabstractheading}[2]{%
+  \par\vspace{9pt}%
+  {\setstretch{1}\centering #1\bfseries\zihao{3}#2\par}%
+  \nobreak\vspace{6pt}%
+}
+
+% Collect the Chinese source until the English source arrives.  One unbroken
+% block keeps the title, author, affiliation, abstracts and keywords together
+% without changing the author's cnabstract/enabstract input convention.
+\long\def\yibin@reviewcnabstract{}
+\RenewDocumentEnvironment{cnabstract}{+b}{%
+  \long\gdef\yibin@reviewcnabstract{#1}%
+}{}
+
+% The review template numbers the abstract as page 1 and continues with page 2
+% for the body.  Only the header style changes at this boundary.
+\newcommand{\yibin@reviewbodymatter}{%
+  \clearpage
+  \@mainmattertrue
+  \pagestyle{yibinmain}
+  \yibin@plainmain
+}
+
+\RenewDocumentEnvironment{enabstract}{+b}{%
+  \noindent\begin{minipage}[t]{\textwidth}
+    \setstretch{1.5}%
+    {\setstretch{1}\centering\yibinhei\bfseries\zihao{3}\yibintitle\par}%
+    {\centering\yibinhei\zihao{-4}\yibinauthor\par}%
+    {\centering\yibinhei\zihao{-4}\yibin@reviewaffiliation\par}%
+    \yibin@reviewabstractheading{\yibinhei}{摘要}%
+    {\yibinsong\zihao{-4}\setlength{\parindent}{2em}%
+      \yibin@reviewcnabstract\par}%
+    \yibin@reviewabstractheading{\yibinenglishfont}{Abstract}%
+    {\yibinenglishfont\zihao{-4}\setlength{\parindent}{0pt}%
+      #1\par}%
+  \end{minipage}\par
+}{%
+  % Run outside the environment group so the body page style remains active.
+  \aftergroup\yibin@reviewbodymatter
+}
+
+\RenewDocumentCommand{\cnkeywords}{m}{%
+  \par\vspace{6pt}%
+  \noindent{\yibinhei\bfseries 关键词：}{\yibinsong #1}\par
+}
+\RenewDocumentCommand{\enkeywords}{m}{%
+  \par\vspace{6pt}%
+  \noindent{\yibinenglishfont\bfseries Keywords: }{\yibinenglishfont #1}\par
 }
 
 \makeatother

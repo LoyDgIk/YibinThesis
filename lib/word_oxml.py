@@ -8,7 +8,7 @@ import sys
 def bind_core(core):
     module = sys.modules[__name__]
     for name in dir(core):
-        if name not in {"bind_core", "sys"}:
+        if not name.startswith("__") and name not in {"bind_core", "sys"}:
             setattr(module, name, getattr(core, name))
     return module
 
@@ -306,14 +306,22 @@ def _insert_cover_table(
         for attribute in ("left", "right", "firstLine", "leftChars", "rightChars", "firstLineChars"):
             indent.set(qn(f"w:{attribute}"), "0")
         if kind == "label":
-            if index == 0:
-                p.style = document.styles["CoverField"]
-                if value.startswith("指导教师"):
-                    p.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            else:
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p.paragraph_format.line_spacing = 1.0
+            p.style = document.styles["CoverField"]
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT if index == 0 else WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.line_spacing = 1.0
             _add_cover_label(p, value)
+            # Labels are fixed text.  Never let a value-slot underline or a
+            # paragraph border leak into the label cell.
+            for run in p.runs:
+                run.font.underline = False
+                r_pr = run._r.get_or_add_rPr()
+                underline = r_pr.find(qn("w:u"))
+                if underline is not None:
+                    r_pr.remove(underline)
+            p_pr = p._p.get_or_add_pPr()
+            paragraph_borders = p_pr.find(qn("w:pBdr"))
+            if paragraph_borders is not None:
+                p_pr.remove(paragraph_borders)
         else:
             p.style = document.styles["CoverValueLine"]
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -899,17 +907,12 @@ def _set_style_numbering(style, num_id: int, level: int) -> None:
     existing = p_pr.find(qn("w:numPr"))
     if existing is not None:
         p_pr.remove(existing)
-    num_pr = OxmlElement("w:numPr")
+    num_pr = p_pr.get_or_add_numPr()
     ilvl = OxmlElement("w:ilvl")
     ilvl.set(qn("w:val"), str(level))
     num = OxmlElement("w:numId")
     num.set(qn("w:val"), str(num_id))
     num_pr.extend([ilvl, num])
-    insertion = 0
-    for index, child_element in enumerate(p_pr):
-        if child_element.tag == qn("w:pStyle"):
-            insertion = index + 1
-    p_pr.insert(insertion, num_pr)
 
 
 def _set_paragraph_numbering(paragraph, num_id: int, level: int) -> None:
@@ -984,7 +987,12 @@ def _new_numbering_instance(document: Document, abstract_id: int) -> int:
     return num_id
 
 
-def _configure_heading_numbering(document: Document, discipline: str) -> int:
+def _configure_heading_numbering(
+    document: Document,
+    discipline: str,
+    *,
+    style_names: tuple[str, ...] | None = None,
+) -> int:
     """Attach a real four-level Word list to the reusable heading styles."""
 
     numbering = document.part.numbering_part.element
@@ -993,7 +1001,12 @@ def _configure_heading_numbering(document: Document, discipline: str) -> int:
     abstract = OxmlElement("w:abstractNum")
     abstract.set(qn("w:abstractNumId"), str(abstract_id))
     nsid = OxmlElement("w:nsid")
-    nsid.set(qn("w:val"), hashlib.sha1(f"YibinHeading:{discipline}".encode()).hexdigest()[:8].upper())
+    identity = f"YibinHeading:{discipline}"
+    if style_names is not None:
+        identity += ":" + ":".join(document.styles[name].style_id for name in style_names)
+    # Distinct style families must not look like the same list to Word: it
+    # otherwise merges the definitions and drops the review style bindings.
+    nsid.set(qn("w:val"), hashlib.sha1(identity.encode()).hexdigest()[:8].upper())
     multi = OxmlElement("w:multiLevelType")
     multi.set(qn("w:val"), "multilevel")
     abstract.extend([nsid, multi])
@@ -1012,12 +1025,12 @@ def _configure_heading_numbering(document: Document, discipline: str) -> int:
         level_texts = ["%1、", "（%2）", "%3.", "（%4）"]
         suffix = "nothing"
 
-    style_names = [
+    style_names = style_names or (
         STYLE_HEADING_1,
         STYLE_HEADING_2,
         STYLE_HEADING_3,
         STYLE_HEADING_4,
-    ]
+    )
     for level, (style_name, number_format, level_text) in enumerate(
         zip(style_names, formats, level_texts)
     ):
@@ -1202,7 +1215,7 @@ def _restart_cell_heading_numbering(
     cell,
     abstract_id: int,
 ) -> None:
-    """Give one proposal field an independent native heading list instance."""
+    """Start each root heading branch explicitly within its proposal field."""
 
     levels = {
         STYLE_HEADING_1: 0,
@@ -1214,9 +1227,22 @@ def _restart_cell_heading_numbering(
     headings = [p for p in cell.paragraphs if p.style.name in levels]
     if not headings:
         return
-    num_id = _new_numbering_instance(document, abstract_id)
+    root_number = 0
+    num_id = None
     for paragraph in headings:
-        _set_paragraph_numbering(paragraph, num_id, levels[paragraph.style.name])
+        level = levels[paragraph.style.name]
+        if level == 0 or num_id is None:
+            root_number += 1
+            num_id = _new_numbering_instance(document, abstract_id)
+            # Word may restart a style-linked list when a table spans pages.
+            # Pin each root's number and keep its descendants on that instance.
+            number = document.part.numbering_part.element.num_having_numId(num_id)
+            number.add_lvlOverride(ilvl=0).add_startOverride(root_number)
+        _set_paragraph_numbering(paragraph, num_id, level)
+        properties = paragraph._p.get_or_add_pPr()
+        binding = properties.numPr
+        properties.remove(binding)
+        properties._insert_numPr(binding)
 
 
 def _isolate_humanities_introduction_numbering(
@@ -2156,7 +2182,9 @@ def _next_bookmark_id(document: Document) -> int:
 
 
 def _citation_bookmark_name(key: str) -> str:
-    safe = re.sub(r"[^A-Za-z0-9_]", "_", key or "")[:17]
+    # Word 16 loses REF hyperlink navigation on reopen at exactly 40
+    # characters. Keep the digest and cap the full bookmark name at 39.
+    safe = re.sub(r"[^A-Za-z0-9_]", "_", key or "")[:16]
     digest = hashlib.sha1((key or "").encode("utf-8")).hexdigest()[:8]
     return f"YibinCitation_{safe}_{digest}"
 
@@ -2550,5 +2578,3 @@ def _inject_bibliography_sources(
             dst.writestr(props_name, ET.tostring(props, encoding="utf-8", xml_declaration=True))
             dst.writestr(item_rels_name, ET.tostring(item_rels, encoding="utf-8", xml_declaration=True))
     os.replace(temp, docx_path)
-
-

@@ -195,6 +195,8 @@
 \tl_new:N \g_yibin_author_tl
 \tl_new:N \g_yibin_student_id_tl
 \tl_new:N \g_yibin_college_tl
+\tl_new:N \g_yibin_affiliation_city_tl
+\tl_new:N \g_yibin_affiliation_postcode_tl
 \tl_new:N \g_yibin_major_tl
 \tl_new:N \g_yibin_grade_tl
 \tl_new:N \g_yibin_class_name_tl
@@ -229,6 +231,8 @@
   author                   .tl_gset:N = \g_yibin_author_tl,
   student-id               .tl_gset:N = \g_yibin_student_id_tl,
   college                  .tl_gset:N = \g_yibin_college_tl,
+  affiliation-city         .tl_gset:N = \g_yibin_affiliation_city_tl,
+  affiliation-postcode     .tl_gset:N = \g_yibin_affiliation_postcode_tl,
   major                    .tl_gset:N = \g_yibin_major_tl,
   grade                    .tl_gset:N = \g_yibin_grade_tl,
   class-name               .tl_gset:N = \g_yibin_class_name_tl,
@@ -236,6 +240,8 @@
   advisor-title            .tl_gset:N = \g_yibin_advisor_title_tl,
   external-advisor         .tl_gset:N = \g_yibin_external_advisor_tl,
   external-advisor-title   .tl_gset:N = \g_yibin_external_advisor_title_tl,
+  second-advisor           .tl_gset:N = \g_yibin_external_advisor_tl,
+  second-advisor-title     .tl_gset:N = \g_yibin_external_advisor_title_tl,
   version                  .tl_gset:N = \g_yibin_version_tl,
   date                     .tl_gset:N = \g_yibin_date_tl,
   template-year            .code:n = {
@@ -279,6 +285,8 @@
   author                  = {（填写姓名）},
   student-id              = {（填写学号）},
   college                 = {（填写学院）},
+  affiliation-city        = {},
+  affiliation-postcode    = {},
   major                   = {（填写专业）},
   grade                   = {（填写年级）},
   class-name              = {},
@@ -305,6 +313,8 @@
 \NewExpandableDocumentCommand{\yibinauthor}{}{\tl_use:N \g_yibin_author_tl}
 \NewExpandableDocumentCommand{\yibinstudentid}{}{\tl_use:N \g_yibin_student_id_tl}
 \NewExpandableDocumentCommand{\yibincollege}{}{\tl_use:N \g_yibin_college_tl}
+\NewExpandableDocumentCommand{\yibinaffiliationcity}{}{\tl_use:N \g_yibin_affiliation_city_tl}
+\NewExpandableDocumentCommand{\yibinaffiliationpostcode}{}{\tl_use:N \g_yibin_affiliation_postcode_tl}
 \NewExpandableDocumentCommand{\yibinmajor}{}{\tl_use:N \g_yibin_major_tl}
 \NewExpandableDocumentCommand{\yibingrade}{}{\tl_use:N \g_yibin_grade_tl}
 \NewExpandableDocumentCommand{\yibinclassname}{}{\tl_use:N \g_yibin_class_name_tl}
@@ -319,6 +329,8 @@
 \NewExpandableDocumentCommand{\yibinadvisortitle}{}{\tl_use:N \g_yibin_advisor_title_tl}
 \NewExpandableDocumentCommand{\yibinexternaladvisor}{}{\tl_use:N \g_yibin_external_advisor_tl}
 \NewExpandableDocumentCommand{\yibinexternaladvisortitle}{}{\tl_use:N \g_yibin_external_advisor_title_tl}
+\NewExpandableDocumentCommand{\yibinsecondadvisor}{}{\tl_use:N \g_yibin_external_advisor_tl}
+\NewExpandableDocumentCommand{\yibinsecondadvisortitle}{}{\tl_use:N \g_yibin_external_advisor_title_tl}
 \NewExpandableDocumentCommand{\yibinversion}{}{\tl_use:N \g_yibin_version_tl}
 \NewExpandableDocumentCommand{\yibindate}{}{\tl_use:N \g_yibin_date_tl}
 \NewDocumentCommand{\yibinifversion}{mm}{

@@ -5,6 +5,7 @@ import re
 import sys
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 
 from docx import Document
@@ -33,6 +34,15 @@ BUILD_REFERENCE = _load_module(
 
 
 class DocumentProfileParsingTests(unittest.TestCase):
+    def test_repeated_profile_binding_preserves_module_identity(self) -> None:
+        first = BUILD_WORD._profiles_module()
+        second = BUILD_WORD._profiles_module()
+        self.assertIs(first, second)
+        self.assertEqual(first.__name__, "word_profiles")
+        self.assertEqual(first.__file__, str(ROOT / "lib" / "word_profiles.py"))
+        self.assertEqual(BUILD_WORD._bind_oxml_module().__name__, "word_oxml")
+        self.assertIsNot(first._postprocess_review_docx, BUILD_WORD._postprocess_review_docx)
+
     def test_document_type_defaults_and_explicit_options(self) -> None:
         cases = (
             (r"\documentclass{yibinthesis}", "thesis", "humanities", "2024"),
@@ -154,10 +164,10 @@ class ProposalFieldContractTests(unittest.TestCase):
             BUILD_WORD.extract_proposal_fields(self._source(tuple(keys)))
 
     def test_unnumbered_heading_uses_reusable_proposal_style(self) -> None:
-        converted = BUILD_WORD.demote_proposal_headings(
+        converted = BUILD_WORD.normalize_proposal_headings(
             "正文\n# 编号标题\n内容\n# 可行性分析 {.unnumbered}\n后文"
         )
-        self.assertIn("## 编号标题", converted)
+        self.assertIn("\n# 编号标题\n", converted)
         self.assertIn(
             f'custom-style="{BUILD_WORD.STYLE_PROPOSAL_UNNUMBERED_HEADING}"',
             converted,
@@ -203,6 +213,8 @@ class WordProfileStructureTests(unittest.TestCase):
             "author": "张同学",
             "student-id": "202400000",
             "college": "示例学部",
+            "affiliation-city": "示例城市",
+            "affiliation-postcode": "000000",
             "major": "示例专业",
             "grade": "2024",
             "class-name": "1班",
@@ -248,6 +260,18 @@ class WordProfileStructureTests(unittest.TestCase):
             BUILD_WORD.STYLE_REVIEW_INFO_LABEL,
             BUILD_WORD.STYLE_REVIEW_INFO_VALUE,
             BUILD_WORD.STYLE_REVIEW_DATE,
+            BUILD_WORD.STYLE_REVIEW_COVER_FIELD,
+            BUILD_WORD.STYLE_REVIEW_AUTHOR,
+            BUILD_WORD.STYLE_REVIEW_AFFILIATION,
+            BUILD_WORD.STYLE_REVIEW_ABSTRACT_TITLE,
+            BUILD_WORD.STYLE_REVIEW_ENGLISH_ABSTRACT_TITLE,
+            BUILD_WORD.STYLE_REVIEW_CHINESE_ABSTRACT,
+            BUILD_WORD.STYLE_REVIEW_ENGLISH_ABSTRACT,
+            BUILD_WORD.STYLE_REVIEW_KEYWORDS,
+            BUILD_WORD.STYLE_REVIEW_ENGLISH_KEYWORDS,
+            BUILD_WORD.STYLE_REVIEW_BODY,
+            BUILD_WORD.STYLE_REVIEW_HEADING_1,
+            BUILD_WORD.STYLE_REVIEW_BIBLIOGRAPHY,
             BUILD_WORD.STYLE_FIGURE_CAPTION,
             BUILD_WORD.STYLE_TABLE_CAPTION,
             BUILD_WORD.STYLE_CITATION,
@@ -255,6 +279,38 @@ class WordProfileStructureTests(unittest.TestCase):
             BUILD_WORD.STYLE_APPENDIX_SECTION,
         }
         self.assertTrue(expected.issubset({style.name for style in document.styles}))
+
+    def test_review_styles_keep_abstracts_together_and_headings_in_flow(self) -> None:
+        document = Document(self.reference_docx)
+        for name in (
+            BUILD_WORD.STYLE_REVIEW_ABSTRACT_TITLE,
+            BUILD_WORD.STYLE_REVIEW_ENGLISH_ABSTRACT_TITLE,
+            BUILD_WORD.STYLE_REVIEW_HEADING_1,
+        ):
+            with self.subTest(style=name):
+                self.assertFalse(document.styles[name].paragraph_format.page_break_before)
+        self.assertTrue(document.styles[BUILD_WORD.STYLE_REVIEW_CHINESE_ABSTRACT].paragraph_format.keep_together)
+        self.assertTrue(document.styles[BUILD_WORD.STYLE_REVIEW_ENGLISH_ABSTRACT].paragraph_format.keep_together)
+        self.assertTrue(document.styles[BUILD_WORD.STYLE_REVIEW_KEYWORDS].paragraph_format.keep_with_next)
+        self.assertFalse(document.styles[BUILD_WORD.STYLE_REVIEW_ENGLISH_KEYWORDS].paragraph_format.keep_with_next)
+        self.assertTrue(document.styles[BUILD_WORD.STYLE_FRONT_TITLE].paragraph_format.page_break_before)
+        self.assertEqual(document.styles[BUILD_WORD.STYLE_REVIEW_BODY].font.size.pt, 12)
+        self.assertEqual(document.styles[BUILD_WORD.STYLE_REVIEW_BIBLIOGRAPHY].font.size.pt, 10.5)
+
+    def test_review_heading_list_has_its_own_word_identity(self) -> None:
+        document = Document(self.reference_docx)
+        thesis_id = BUILD_WORD._configure_heading_numbering(document, "humanities")
+        review_id = BUILD_WORD._configure_heading_numbering(
+            document, "humanities", style_names=(
+                BUILD_WORD.STYLE_REVIEW_HEADING_1, BUILD_WORD.STYLE_REVIEW_HEADING_2,
+                BUILD_WORD.STYLE_REVIEW_HEADING_3, BUILD_WORD.STYLE_REVIEW_HEADING_4,
+            ),
+        )
+        identities = {
+            int(node.get(BUILD_WORD.qn("w:abstractNumId"))): node.find(BUILD_WORD.qn("w:nsid")).get(BUILD_WORD.qn("w:val"))
+            for node in document.part.numbering_part.element.findall(BUILD_WORD.qn("w:abstractNum"))
+        }
+        self.assertNotEqual(identities[thesis_id], identities[review_id])
 
     def test_reference_caption_directory_matches_first_level_toc(self) -> None:
         document = Document(self.reference_docx)
@@ -352,6 +408,7 @@ class WordProfileStructureTests(unittest.TestCase):
             input_docx,
             output_docx,
             metadata={**self._metadata(), "template-year": "2022"},
+            project_root=ROOT,
             main_dir=self.root,
             metadata_dir=self.root,
             discipline="humanities",
@@ -367,32 +424,32 @@ class WordProfileStructureTests(unittest.TestCase):
         document = Document(output_docx)
         self.assertIn("document-type=proposal", document.core_properties.keywords)
         self.assertIn("template-year=2022", document.core_properties.keywords)
-        self.assertEqual(len(document.sections), 1)
+        self.assertEqual(len(document.sections), 2)
+        self.assertIsNone(self._page_number_attributes(document.sections[0]))
         self.assertEqual(
-            self._page_number_attributes(document.sections[0]),
-            {"format": "decimal", "start": "4"},
+            self._page_number_attributes(document.sections[1]),
+            {"format": "decimal", "start": "1"},
         )
-        self.assertEqual([len(table.rows) for table in document.tables], [7])
+        self.assertEqual([len(table.rows) for table in document.tables], [1, 1, 1, 1, 1, 7])
         self.assertEqual(
             [
                 "".join(row.cells[0].paragraphs[0].text.split())
-                for table in document.tables
+                for table in document.tables[:5]
                 for row in table.rows
             ],
             [
-                "学院（部）",
-                "专    业",
+                "学部（院）",
+                "专业",
                 "学生姓名",
-                "学    号",
-                "年    级",
+                "学号",
                 "指导教师",
             ],
         )
         self.assertTrue(
             all(
                 row.cells[0].paragraphs[0].style.name
-                == BUILD_WORD.STYLE_PROPOSAL_LABEL
-                for table in document.tables[:1]
+                == "CoverField"
+                for table in document.tables[:5]
                 for row in table.rows
             )
         )
@@ -404,12 +461,20 @@ class WordProfileStructureTests(unittest.TestCase):
         self.assertEqual(len(page_breaks), 0)
         self.assertIn(
             " PAGE ",
-            self._field_instructions(document.sections[0].footer._element),
+            self._field_instructions(document.sections[1].footer._element),
         )
 
-    def test_literature_review_has_two_sections_and_native_word_fields(self) -> None:
+    def test_literature_review_has_four_sections_and_native_word_fields(self) -> None:
         source = Document(self.reference_docx)
         source.paragraphs[0].text = BUILD_WORD.SECTION_REVIEW_COVER_END
+        source.add_paragraph("摘要", style="FrontTitle")
+        source.add_paragraph("中文摘要正文。", style="ChineseAbstract")
+        source.add_paragraph("关键词：资料；标准；研究", style="Keywords")
+        source.add_paragraph("Abstract", style="FrontTitle")
+        source.add_paragraph("An English abstract.", style="EnglishAbstract")
+        source.add_paragraph("Keywords: evidence; standards; research", style="Keywords")
+        source.add_paragraph(BUILD_WORD.SECTION_REVIEW_ABSTRACT_END)
+        source.add_paragraph("无标题引言正文。", style="Body Text")
         source.add_paragraph("研究背景", style=BUILD_WORD.STYLE_HEADING_1)
         source.add_paragraph("图1 技术路线", style="Caption")
 
@@ -419,6 +484,10 @@ class WordProfileStructureTests(unittest.TestCase):
         citations = BUILD_WORD.CitationRegistry()
         citation = citations.placeholder("source1")
         source.add_paragraph(f"见图{reference}，参考文献{citation}。")
+        source.add_paragraph("结论与展望", style=BUILD_WORD.STYLE_HEADING_1)
+        source.add_paragraph("结论正文。", style="Body Text")
+        source.add_paragraph(BUILD_WORD.SECTION_REVIEW_REFERENCES)
+        source.add_paragraph("参考文献", style="Heading 1")
         source.add_paragraph("[1] 示例文献", style="Bibliography")
 
         input_docx = self.root / "review-input.docx"
@@ -428,6 +497,7 @@ class WordProfileStructureTests(unittest.TestCase):
             input_docx,
             output_docx,
             metadata=self._metadata(),
+            project_root=ROOT,
             main_dir=self.root,
             metadata_dir=self.root,
             discipline="humanities",
@@ -441,16 +511,41 @@ class WordProfileStructureTests(unittest.TestCase):
         )
 
         document = Document(output_docx)
-        self.assertEqual(len(document.sections), 2)
+        self.assertEqual(len(document.sections), 4)
         self.assertIsNone(self._page_number_attributes(document.sections[0]))
         self.assertEqual(
             self._page_number_attributes(document.sections[1]),
             {"format": "decimal", "start": "1"},
         )
+        self.assertEqual(self._page_number_attributes(document.sections[2]), {"format": "decimal", "start": ""})
         self.assertEqual(
             next(p for p in document.paragraphs if p.text == "研究背景").style.name,
-            BUILD_WORD.STYLE_HEADING_1,
+            BUILD_WORD.STYLE_REVIEW_HEADING_1,
         )
+        self.assertEqual(next(p for p in document.paragraphs if p.text == "结论与展望").style.name, BUILD_WORD.STYLE_REVIEW_HEADING_1)
+        self.assertEqual(next(p for p in document.paragraphs if p.text == "无标题引言正文。").style.name, BUILD_WORD.STYLE_REVIEW_BODY)
+        self.assertFalse(document.tables)
+        cover_rows = [p for p in document.paragraphs if p.style.name == BUILD_WORD.STYLE_REVIEW_COVER_FIELD]
+        self.assertEqual(len(cover_rows), 7)
+        self.assertTrue(cover_rows[0].text.startswith("题    目\t"))
+        self.assertIn(self._metadata()["title"], cover_rows[0].text)
+        self.assertAlmostEqual(cover_rows[0].paragraph_format.left_indent.cm, 3.7, places=2)
+        self.assertAlmostEqual(cover_rows[0].paragraph_format.first_line_indent.cm, -3.7, places=2)
+        self.assertTrue(cover_rows[1].text.startswith("学部（院）\t"))
+        self.assertTrue(cover_rows[-2].text.startswith("指导教师1\t"))
+        self.assertTrue(cover_rows[-1].text.startswith("指导教师2\t"))
+        for row in cover_rows:
+            self.assertIsNone(row._p.find(BUILD_WORD.qn("w:pPr") + "/" + BUILD_WORD.qn("w:pBdr")))
+            for run in row.runs:
+                if run.style.name == BUILD_WORD.STYLE_REVIEW_COVER_LABEL:
+                    self.assertFalse(run.style.font.underline)
+                elif run.style.name == BUILD_WORD.STYLE_REVIEW_COVER_VALUE:
+                    self.assertTrue(run.style.font.underline)
+        self.assertIn("职称", cover_rows[-1].text)
+        self.assertEqual(next(p for p in document.paragraphs if p.style.name == BUILD_WORD.STYLE_REVIEW_THESIS_TITLE).text, self._metadata()["title"])
+        self.assertEqual(next(p for p in document.paragraphs if p.style.name == BUILD_WORD.STYLE_REVIEW_AFFILIATION).text, "（示例学部 示例城市 000000）")
+        self.assertEqual(next(p for p in document.paragraphs if p.text == "Abstract").style.name, BUILD_WORD.STYLE_REVIEW_ENGLISH_ABSTRACT_TITLE)
+        self.assertFalse(any("TOC" in value for value in self._field_instructions(document.element)))
 
         caption = next(p for p in document.paragraphs if p.text == "图1 技术路线")
         self.assertEqual(caption.style.name, BUILD_WORD.STYLE_FIGURE_CAPTION)
@@ -516,6 +611,144 @@ class WordProfileStructureTests(unittest.TestCase):
             ),
             "引用上标应由字符样式驱动，而不是逐个 run 直接编码。",
         )
+
+    def test_review_second_advisor_prefers_explicit_slot_and_accepts_legacy_keys(self) -> None:
+        cases = (
+            ({"external-advisor": "旧字段导师", "external-advisor-title": "讲师"}, "旧字段导师", "讲师"),
+            ({"external-advisor": "旧字段导师", "second-advisor": "第二导师", "second-advisor-title": "副教授"}, "第二导师", "副教授"),
+            ({"external-advisor": "旧字段导师", "second-advisor": "", "second-advisor-title": ""}, "", ""),
+        )
+        for extra, expected_name, expected_title in cases:
+            with self.subTest(metadata=extra):
+                document = Document(self.reference_docx)
+                BUILD_WORD._profiles_module()._insert_review_cover(
+                    document, document.paragraphs[0], {**self._metadata(), **extra},
+                    project_root=ROOT, main_dir=self.root, metadata_dir=self.root,
+                    discipline="humanities",
+                )
+                row = next(p for p in document.paragraphs if p.text.startswith("指导教师2\t"))
+                values = [run.text.strip("\t") for run in row.runs if run.style.name == BUILD_WORD.STYLE_REVIEW_COVER_VALUE]
+                self.assertEqual(values, [expected_name, expected_title])
+                self.assertIn("职称", row.text)
+                self.assertFalse(document.tables)
+
+    def test_review_build_preserves_abstracts_math_and_standard_citations_for_both_disciplines(self) -> None:
+        try:
+            pandoc = BUILD_WORD.find_pandoc(None, ROOT)
+        except BUILD_WORD.BuildError as error:
+            self.skipTest(str(error))
+        for discipline in ("humanities", "science"):
+            with self.subTest(discipline=discipline):
+                project = self.root / ("review-build-" + discipline)
+                chapters = project / "chapters"
+                chapters.mkdir(parents=True)
+                (project / "metadata.tex").write_text(
+                    r"\yibinsetup{template-year=2024,title={结构回归综述},author={测试作者},college={测试学部},affiliation-city={测试市},affiliation-postcode={000000}}",
+                    encoding="utf-8",
+                )
+                main_text = (
+                    "\\documentclass[literature-review," + discipline + "]{yibinthesis}\n"
+                    "\\input{metadata}\n\\addbibresource{references.bib}\n"
+                    "\\begin{document}\n\\makeyibinliteraturereviewcover\n"
+                    "\\input{chapters/00-abstract-cn}\n\\input{chapters/01-abstract-en}\n"
+                    "\\input{chapters/body}\n\\printyibinbibliography\n\\end{document}\n"
+                )
+                main = project / "main.tex"
+                main.write_text(main_text, encoding="utf-8")
+                (chapters / "00-abstract-cn.tex").write_text(
+                    r"\begin{cnabstract}这是用于验证摘要内容保留的文字。\cnkeywords{资料；标准；研究}\end{cnabstract}",
+                    encoding="utf-8",
+                )
+                (chapters / "01-abstract-en.tex").write_text(
+                    r"\begin{enabstract}This abstract verifies the document conversion.\enkeywords{evidence; standards; research}\end{enabstract}",
+                    encoding="utf-8",
+                )
+                (chapters / "body.tex").write_text(
+                    "这是无标题引言。\n\n\\chapter{相关研究}\n"
+                    "正文数学 $k$ 保持可编辑。\\yibincite{fixture_standard,fixture_math}\n"
+                    "\\section{研究方法}\n方法正文。\n"
+                    "\\yibinclosingchapter[结论与展望]\n结论正文。\n",
+                    encoding="utf-8",
+                )
+                (project / "references.bib").write_text(
+                    "@standard{fixture_standard, author={{Test Organization}}, title={Test standard}, number={TEST 1}, date={2024}, location={Test City}, publisher={Test Publisher}}\n"
+                    "@inproceedings{fixture_math, author={Author, Test}, title={{$k$-means++}: CO\\textsubscript{2}, x\\textsuperscript{2}, \\textit{in vivo} and \\textbf{bold}}, booktitle={Test Proceedings}, date={2024}, pages={1--2}}\n"
+                    "@article{fixture_uncited, author={Other, Test}, title={Uncited fixture}, journaltitle={Test Journal}, date={2024}}\n",
+                    encoding="utf-8",
+                )
+                output = project / "review.docx"
+                args = BUILD_WORD.make_parser().parse_args([
+                    "--main", str(main), "--output", str(output),
+                    "--reference-doc", str(self.reference_docx), "--pandoc", str(pandoc),
+                    "--citation-mode", "native", "--keep-intermediate",
+                ])
+                expected_title = "结构回归综述"
+                if discipline == "humanities":
+                    override = project / "metadata-override.tex"
+                    expected_title = "覆盖元数据综述"
+                    override.write_text(
+                        (project / "metadata.tex").read_text(encoding="utf-8").replace("结构回归综述", expected_title),
+                        encoding="utf-8",
+                    )
+                    args.metadata = str(override)
+                BUILD_WORD.build(args)
+                document = Document(output)
+                texts = [paragraph.text for paragraph in document.paragraphs]
+                self.assertEqual(len(document.sections), 4)
+                self.assertLess(texts.index(expected_title), texts.index("摘要"))
+                self.assertLess(texts.index("摘要"), texts.index("Abstract"))
+                self.assertLess(texts.index("Abstract"), texts.index("这是无标题引言。"))
+                self.assertIn("关键词：资料；标准；研究", texts)
+                self.assertIn("Keywords: evidence; standards; research", texts)
+                self.assertIn("（测试学部 测试市 000000）", texts)
+                conclusion = next(p for p in document.paragraphs if p.text == "结论与展望")
+                self.assertEqual(conclusion.style.name, BUILD_WORD.STYLE_REVIEW_UNNUMBERED_HEADING)
+                self.assertNotIn("引言", texts)
+                self.assertNotIn("目录", texts)
+                self.assertFalse(any(text.startswith("YIBIN_INTERNAL_") for text in texts))
+                self.assertNotIn("$k$", "\n".join(texts))
+                math_values = [
+                    "".join(part.text or "" for part in math.iter(BUILD_WORD.qn("m:t")))
+                    for math in document.element.iter(BUILD_WORD.qn("m:oMath"))
+                ]
+                self.assertGreaterEqual(math_values.count("k"), 2)
+                bibliography = "\n".join(p.text for p in document.paragraphs if p.style.name == BUILD_WORD.STYLE_REVIEW_BIBLIOGRAPHY)
+                standard_entry = next(line for line in bibliography.splitlines() if "Test standard" in line)
+                self.assertIn("[S]", standard_entry)
+                self.assertNotIn("[Z]", standard_entry)
+                self.assertNotIn("Uncited fixture", bibliography)
+                math_entry = next(p for p in document.paragraphs if "means++" in p.text)
+                vertical_alignments = {
+                    node.get(BUILD_WORD.qn("w:val"))
+                    for node in math_entry._p.iter(BUILD_WORD.qn("w:vertAlign"))
+                }
+                self.assertTrue({"subscript", "superscript"}.issubset(vertical_alignments))
+                for tag, word in (("i", "vivo"), ("b", "bold")):
+                    self.assertTrue(any(
+                        word in "".join(node.text or "" for node in run.iter(BUILD_WORD.qn("w:t"))).lower()
+                        and run.find(BUILD_WORD.qn("w:rPr") + "/" + BUILD_WORD.qn("w:" + tag)) is not None
+                        for run in math_entry._p.iter(BUILD_WORD.qn("w:r"))
+                    ))
+                heading = document.styles[BUILD_WORD.STYLE_REVIEW_HEADING_1]
+                self.assertFalse(heading.paragraph_format.page_break_before)
+                self.assertEqual(heading.paragraph_format.alignment, BUILD_WORD.WD_ALIGN_PARAGRAPH.LEFT)
+                indent = heading.element.get_or_add_pPr().find(BUILD_WORD.qn("w:ind"))
+                self.assertEqual(indent.get(BUILD_WORD.qn("w:firstLineChars")), "0" if discipline == "science" else "200")
+                with zipfile.ZipFile(output) as package:
+                    self.assertTrue(any(
+                        b"Test standard" in package.read(name)
+                        for name in package.namelist()
+                        if name.startswith("customXml/") and name.endswith(".xml")
+                    ))
+                abstract_path = chapters / "00-abstract-cn.tex"
+                abstract_source = abstract_path.read_text(encoding="utf-8")
+                abstract_path.write_text(abstract_source + "\n不应静默丢弃的正文。", encoding="utf-8")
+                with self.assertRaisesRegex(BUILD_WORD.BuildError, "摘要文件不能混入正文"):
+                    BUILD_WORD.build(args)
+                abstract_path.write_text(abstract_source, encoding="utf-8")
+                main.write_text(main_text.replace("\\input{chapters/00-abstract-cn}\n", ""), encoding="utf-8")
+                with self.assertRaisesRegex(BUILD_WORD.BuildError, "中文摘要"):
+                    BUILD_WORD.build(args)
 
 
 if __name__ == "__main__":

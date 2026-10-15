@@ -1225,6 +1225,44 @@ a&b\\
         )
         self.assertEqual(paragraph.text, "[1,2]")
 
+    def test_long_citation_keys_use_reopenable_word_link_targets(self) -> None:
+        document = BUILD_WORD.Document()
+        document.styles.add_style(
+            BUILD_WORD.STYLE_CITATION,
+            BUILD_WORD.WD_STYLE_TYPE.CHARACTER,
+        )
+        document.styles.add_style(
+            "Bibliography", BUILD_WORD.WD_STYLE_TYPE.PARAGRAPH
+        )
+        citations = BUILD_WORD.CitationRegistry()
+        marker = citations.placeholder(
+            "ndrc2025classification,ndrc2025classification_revision"
+        )
+        paragraph = document.add_paragraph(marker)
+        document.add_paragraph("[1] First source", style="Bibliography")
+        document.add_paragraph("[2] Second source", style="Bibliography")
+
+        BUILD_WORD._replace_reference_markers(
+            document, BUILD_WORD.LabelRegistry(), citations, "linked"
+        )
+
+        names = [
+            node.get(BUILD_WORD.qn("w:name"))
+            for node in document.element.iter(BUILD_WORD.qn("w:bookmarkStart"))
+        ]
+        self.assertEqual(len(set(names)), 2)
+        for name in names:
+            # Word 16 opens a 40-character REF target at the document start
+            # after reopening, even though updating the field temporarily works.
+            self.assertLess(len(name), 40)
+        instructions = "".join(
+            node.text or ""
+            for node in paragraph._p.iter(BUILD_WORD.qn("w:instrText"))
+        )
+        for name in names:
+            self.assertIn(f" REF {name} \\h ", instructions)
+        self.assertEqual(paragraph.text, "[1,2]")
+
     def test_science_equation_uses_native_word_sequence_and_full_bookmark(
         self,
     ) -> None:
@@ -1417,7 +1455,7 @@ class BackmatterOrderTests(unittest.TestCase):
     def test_template_and_example_follow_school_backmatter_order(self) -> None:
         cases = (
             (
-                ROOT / "main.tex",
+                ROOT / "examples" / "full-featured" / "main.tex",
                 (
                     r"\input{examples/full-featured/chapters/90-acknowledgements}",
                     r"\printyibinnotes",
@@ -1548,17 +1586,25 @@ class OptionalCoverAndDirectoryTests(unittest.TestCase):
         self.assertIn(r"\renewcommand{\listtablename}{表目录}", source)
 
     def test_word_cover_spacing_is_owned_by_conditional_title_styles(self) -> None:
-        source = (ROOT / "lib" / "word_core.py").read_text(encoding="utf-8")
-        self.assertIn(
-            'title_style = "CoverTitleWithVersion" if version_value else "CoverTitle"',
-            source,
-        )
-        self.assertNotIn("title_paragraph.paragraph_format.space_after", source)
+        from build_reference_docx import build_reference_docx
 
-        reference_source = (ROOT / "lib" / "build_reference_docx.py").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn('("CoverTitleWithVersion", SIMHEI, 18, True', reference_source)
+        with tempfile.TemporaryDirectory() as temporary:
+            reference = build_reference_docx(Path(temporary) / "reference.docx")
+            for version, expected_style in (("", "CoverTitle"), ("修改稿", "CoverTitleWithVersion")):
+                with self.subTest(version=version):
+                    document = BUILD_WORD.Document(reference)
+                    BUILD_WORD._build_cover_page(
+                        document, document.paragraphs[0],
+                        {"title": "封面样式测试", "version": version},
+                        ROOT, ROOT, ROOT,
+                        allow_project_fallback=True, page_break_after=False,
+                    )
+                    title = next(p for p in document.paragraphs if p.text == "封面样式测试")
+                    self.assertEqual(title.style.name, expected_style)
+                    self.assertEqual(title.style.font.size.pt, 18)
+                    self.assertIsNone(title.paragraph_format.space_after)
+                    versions = [p for p in document.paragraphs if p.style.name == "CoverVersion"]
+                    self.assertEqual([p.text for p in versions], [version] if version else [])
 
     def test_word_cover_audit_accepts_and_validates_optional_date(self) -> None:
         source = (ROOT / "tools" / "refresh_word.ps1").read_text(encoding="utf-8")

@@ -53,8 +53,8 @@ TOC_MARKER = "YIBIN_INTERNAL_TOC_76EE"
 LOF_MARKER = "YIBIN_INTERNAL_LOF_56FE"
 LOT_MARKER = "YIBIN_INTERNAL_LOT_8868"
 SECTION_REVIEW_COVER_END = "YIBIN_INTERNAL_SECTION_REVIEW_COVER_END_A2C4"
+SECTION_REVIEW_ABSTRACT_END = "YIBIN_INTERNAL_SECTION_REVIEW_ABSTRACT_END_7C82"
 SECTION_REVIEW_REFERENCES = "YIBIN_INTERNAL_SECTION_REVIEW_REFERENCES_7B19"
-SECTION_REVIEW_TAIL = "YIBIN_INTERNAL_SECTION_REVIEW_TAIL_91E2"
 PROPOSAL_FIELD_MARKER_PREFIX = "YIBIN_INTERNAL_PROPOSAL_FIELD_"
 STYLE_BODY = "宜宾论文-正文"
 STYLE_FIRST_PARAGRAPH = "宜宾论文-首段"
@@ -111,6 +111,24 @@ STYLE_REVIEW_THESIS_TITLE = "宜宾综述-论文题目"
 STYLE_REVIEW_INFO_LABEL = "宜宾综述-信息标签"
 STYLE_REVIEW_INFO_VALUE = "宜宾综述-信息值"
 STYLE_REVIEW_DATE = "宜宾综述-日期"
+STYLE_REVIEW_COVER_FIELD = "宜宾综述-封面填写行"
+STYLE_REVIEW_COVER_LABEL = "宜宾综述-封面标签"
+STYLE_REVIEW_COVER_VALUE = "宜宾综述-封面填值"
+STYLE_REVIEW_AUTHOR = "宜宾综述-作者"
+STYLE_REVIEW_AFFILIATION = "宜宾综述-作者单位"
+STYLE_REVIEW_ABSTRACT_TITLE = "宜宾综述-中文摘要标题"
+STYLE_REVIEW_ENGLISH_ABSTRACT_TITLE = "宜宾综述-英文摘要标题"
+STYLE_REVIEW_CHINESE_ABSTRACT = "宜宾综述-中文摘要正文"
+STYLE_REVIEW_ENGLISH_ABSTRACT = "宜宾综述-英文摘要正文"
+STYLE_REVIEW_KEYWORDS = "宜宾综述-中文关键词"
+STYLE_REVIEW_ENGLISH_KEYWORDS = "宜宾综述-英文关键词"
+STYLE_REVIEW_BODY = "宜宾综述-正文"
+STYLE_REVIEW_HEADING_1 = "宜宾综述-一级标题"
+STYLE_REVIEW_HEADING_2 = "宜宾综述-二级标题"
+STYLE_REVIEW_HEADING_3 = "宜宾综述-三级标题"
+STYLE_REVIEW_HEADING_4 = "宜宾综述-四级标题"
+STYLE_REVIEW_UNNUMBERED_HEADING = "宜宾综述-无编号标题"
+STYLE_REVIEW_BIBLIOGRAPHY = "宜宾综述-参考文献"
 STYLE_PROPOSAL_FORM_TABLE = "YibinProposalForm"
 STYLE_REVIEW_INFO_TABLE = "YibinReviewInfoLayout"
 FIGURE_FILTER = (
@@ -1437,6 +1455,8 @@ def apply_heading_numbering(
     discipline: str,
     counters: HeadingCounters,
     labels: LabelRegistry | None = None,
+    *,
+    unnumbered_style: str | None = None,
 ) -> str:
     labels = labels or LabelRegistry()
     output: list[str] = []
@@ -1457,6 +1477,9 @@ def apply_heading_numbering(
         if unnumbered:
             if level == 1:
                 counters.section = counters.subsection = counters.subsubsection = 0
+                if unnumbered_style is not None:
+                    output.append(custom_block(unnumbered_style, title))
+                    continue
             output.append(f"{'#' * level} {title}{attribute_text}")
             continue
 
@@ -1501,10 +1524,10 @@ def apply_heading_numbering(
     return "\n".join(output)
 
 
-def demote_proposal_headings(markdown: str) -> str:
-    """Map standalone Pandoc section levels back to the book-class hierarchy."""
+def normalize_proposal_headings(markdown: str) -> str:
+    """Keep field-local section levels and retain explicit unnumbered titles."""
 
-    heading = re.compile(r"^(?P<marks>#{1,3})\s+(?P<body>.+?)\s*$")
+    heading = re.compile(r"^(?P<marks>#{1,4})\s+(?P<body>.+?)\s*$")
     attributes = re.compile(r"^(?P<title>.*?)(?:\s+\{(?P<attrs>[^{}]*)\})?$")
     output: list[str] = []
     for line in markdown.splitlines():
@@ -1528,7 +1551,7 @@ def demote_proposal_headings(markdown: str) -> str:
             continue
         if output and output[-1].strip():
             output.append("")
-        output.append("#" * (len(match.group("marks")) + 1) + " " + match.group("body"))
+        output.append(match.group("marks") + " " + match.group("body"))
         output.append("")
     return "\n".join(output)
 
@@ -1739,7 +1762,7 @@ def prepare_bibliography(
     cwd: Path,
     temp_dir: Path,
 ) -> Path:
-    """Convert BibLaTeX to CSL JSON and preserve @standard as CSL standard.
+    """Preserve BibLaTeX inline formatting and restore @standard for citeproc.
 
     Pandoc maps BibLaTeX ``@standard`` to ``legislation`` by default, which the
     bundled GB/T style correctly renders as archival material [A].  The source
@@ -1749,12 +1772,12 @@ def prepare_bibliography(
     if bibliography.suffix.lower() not in {".bib", ".biblatex"}:
         return bibliography
     result = run_checked(
-        [str(pandoc), "--from=biblatex", "--to=csljson", str(bibliography)],
+        [str(pandoc), "--from=biblatex", "--to=json", str(bibliography)],
         cwd=cwd,
         capture_output=True,
     )
     try:
-        items = json.loads(result.stdout or "[]")
+        ast_document = json.loads(result.stdout or "{}")
     except json.JSONDecodeError as error:
         raise BuildError(f"Pandoc 无法解析参考文献 JSON：{error}") from error
     source = strip_tex_comments(bibliography.read_text(encoding="utf-8"))
@@ -1765,15 +1788,33 @@ def prepare_bibliography(
             source,
         )
     }
-    for item in items:
-        if entry_types.get(str(item.get("id", ""))) == "standard":
-            item["type"] = "standard"
-    output = temp_dir / "references.csl.json"
-    output.write_text(
-        json.dumps(items, ensure_ascii=False, indent=2) + "\n",
+    metadata = ast_document["meta"]
+    for entry in metadata.get("references", {}).get("c", []):
+        fields = entry["c"]
+        if entry_types.get(fields["id"]["c"]) == "standard":
+            fields["type"] = {"t": "MetaString", "c": "standard"}
+    # The bibliography reader adds nocite=* when it is used as a document
+    # reader.  Only the manuscript's citations should select the final entries.
+    metadata.pop("nocite", None)
+    ast_path = temp_dir / "references.pandoc.json"
+    ast_path.write_text(
+        json.dumps(ast_document, ensure_ascii=False, indent=2) + "\n",
         encoding="utf-8",
         newline="\n",
     )
+    # YAML accepts Pandoc Markdown in bibliography fields.  Serializing from
+    # the AST retains Math, Subscript, Superscript, Emph and Strong together;
+    # relabeling CSL JSON as YAML would instead lose its HTML inline markup.
+    output = temp_dir / "references.csl.yaml"
+    run_checked([
+        str(pandoc), "--from=json", "--to=markdown", "--standalone", "--wrap=none",
+        f"--output={output}", str(ast_path),
+    ], cwd=cwd)
+    # Keep CSL records for Word's native citation source data as well.
+    run_checked([
+        str(pandoc), "--from=json", "--to=csljson",
+        f"--output={output.with_suffix('.json')}", str(ast_path),
+    ], cwd=cwd)
     return output
 
 
@@ -2268,7 +2309,7 @@ def _bind_oxml_module():
     import word_oxml
     module = word_oxml.bind_core(sys.modules[__name__])
     for name in dir(module):
-        if name.startswith("_"):
+        if name.startswith("_") and not name.startswith("__"):
             globals()[name] = getattr(module, name)
     return module
 
@@ -3091,8 +3132,9 @@ def build(args: argparse.Namespace) -> Path:
             temp_dir=temp_dir,
         )
         bibliography_items: list[dict[str, object]] = []
-        if citeproc_bibliography.suffix.lower() == ".json":
-            parsed_items = json.loads(citeproc_bibliography.read_text(encoding="utf-8"))
+        bibliography_json = citeproc_bibliography.with_suffix(".json") if citeproc_bibliography != bibliography else citeproc_bibliography
+        if bibliography_json.suffix.lower() == ".json":
+            parsed_items = json.loads(bibliography_json.read_text(encoding="utf-8"))
             if isinstance(parsed_items, list):
                 bibliography_items = [item for item in parsed_items if isinstance(item, dict)]
         command = [

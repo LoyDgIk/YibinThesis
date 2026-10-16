@@ -6,7 +6,7 @@
 入口先调用 `\makeyibinliteraturereviewcover`，再依次载入 `chapters/00-abstract-cn`、
 `chapters/01-abstract-en`、`chapters/body`，最后调用 `\printyibinbibliography`。
 中英文摘要自动同页，摘要前显示题目、作者及学部、所在地、邮编；正文从下一页开始，
-引言不设标题，主题章连续排版，最后一章为“结论与展望”，参考文献另起一页。正文可使用
+各章均须有标题、不留无标题的悬置段，主题章连续排版，最后一章为“结论与展望”，参考文献另起一页。正文可使用
 `\chapter`、`\section`、`\subsection` 和 `\subsubsection`；Word 输出使用独立的
 “宜宾论文-一级标题”至“宜宾论文-四级标题”及可复用的正文、题注和参考文献样式，
 由自定义标题样式保证格式符合规范。Word 自带的 `Heading 1` 至 `Heading 4` 保持原有

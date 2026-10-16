@@ -97,8 +97,8 @@ yibinthesis new ..\论文项目\我的综述 --type literature-review --discipli
 
 `literature-review` 生成的入口按封面、`chapters/00-abstract-cn`、
 `chapters/01-abstract-en`、`chapters/body`、`\printyibinbibliography` 的顺序装配。
-摘要前显示题目、作者和学部/城市/邮编单位行，中英文摘要同页；正文另起一页，以无标题
-引言开始，主题章连续排列，末章为“结论与展望”，参考文献单独起页，默认不生成目录。
+摘要前显示题目、作者和学部/城市/邮编单位行，中英文摘要同页；正文另起一页，各章均带
+标题且不留悬置段，主题章连续排列，末章为“结论与展望”，参考文献单独起页，默认不生成目录。
 具体结构与字数、文献要求见[文档类型与入口](document-types.md#文献综述)。
 
 `new` 和 `init` 可使用以下选项写入 `latex/metadata.tex`：

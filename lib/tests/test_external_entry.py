@@ -1639,6 +1639,42 @@ class OptionalCoverAndDirectoryTests(unittest.TestCase):
         self.assertIn("[math]::Abs($size) -gt 1000", source)
         self.assertIn("$Paragraph.Range.ParagraphStyle.Font.Size", source)
 
+    def test_word_cover_audit_tracks_separate_label_and_value_paragraphs(self) -> None:
+        source = (ROOT / "tools" / "refresh_word.ps1").read_text(encoding="utf-8")
+        self.assertIn("CoverField paragraph count expected 9", source)
+        self.assertNotIn("CoverField paragraph count expected 6", source)
+        # The shared 年级 and 职称 labels make nine label paragraphs on six rows.
+        for token in ("@('年级')", "@('指导教师（校内）')", "@('指导教师（校外）')"):
+            self.assertIn(token, source)
+
+    def test_generated_docx_audit_tracks_the_nine_label_cover_model(self) -> None:
+        source = (ROOT / "lib" / "audit_format.py").read_text(encoding="utf-8")
+        # Nine thesis labels across six layout tables; the 2022 proposal cover
+        # has seven labels across five.  The counts must stay separate.
+        self.assertIn(
+            "9 if is_thesis else (7 if is_proposal else 0)",
+            source,
+        )
+        self.assertIn(
+            "6 if is_thesis else (5 if is_proposal else 0)",
+            source,
+        )
+        self.assertIn('"学部（院）"', source)
+        self.assertIn('"指导教师（校内）"', source)
+        self.assertIn('"指导教师（校外）"', source)
+
+    def test_generated_docx_audit_uses_the_review_heading_styles(self) -> None:
+        source = (ROOT / "lib" / "audit_format.py").read_text(encoding="utf-8")
+        self.assertIn('if document_type == "literature-review" else', source)
+        self.assertIn('"宜宾综述-一级标题"', source)
+
+    def test_format_audit_does_not_accept_unused_manuscript_root(self) -> None:
+        auditor = (ROOT / "lib" / "audit_format.py").read_text(encoding="utf-8")
+        builder = (ROOT / "build.ps1").read_text(encoding="utf-8")
+        # The flag used to be parsed and then silently ignored.
+        self.assertNotIn("--manuscript-root", auditor)
+        self.assertNotIn("--manuscript-root", builder)
+
 
 class DocumentModulePackagingTests(unittest.TestCase):
     def test_document_specific_layouts_stay_out_of_core_class(self) -> None:

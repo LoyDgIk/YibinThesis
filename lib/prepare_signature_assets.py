@@ -31,12 +31,23 @@ def locate_metadata(main_path: Path, project_root: Path) -> Path:
         )
         if "\\yibinsetup" in candidate.read_text(encoding="utf-8"):
             return candidate
-    candidates = [main_dir / "metadata.tex"]
+    # The entry file itself may declare \yibinsetup instead of \input-ing a
+    # separate metadata.tex; the smoke entries and single-file projects do.
+    candidates = [main_path, main_dir / "metadata.tex"]
     if allow_project_fallback:
         candidates.append(project_root / "metadata.tex")
-    metadata = next((path.resolve() for path in candidates if path.is_file()), None)
+    metadata = next(
+        (
+            path.resolve()
+            for path in candidates
+            if path.is_file() and "\\yibinsetup" in path.read_text(encoding="utf-8")
+        ),
+        None,
+    )
     if metadata is None:
-        raise build_word.BuildError("未找到 metadata.tex，无法准备签名图片。")
+        raise build_word.BuildError(
+            f"未在 {main_path} 及其输入文件中找到 \\yibinsetup，无法准备签名图片。"
+        )
     return metadata
 
 

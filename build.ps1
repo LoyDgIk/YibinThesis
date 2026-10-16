@@ -1100,8 +1100,7 @@ function Invoke-Checks {
     $auditArguments += $Tools.Python.PrefixArguments
     $auditArguments += @(
         $auditor,
-        '--reference', $reference,
-        '--manuscript-root', $Layout.MainDirectory
+        '--reference', $reference
     )
     foreach ($generatedWordOutput in $generatedWordOutputs) {
         $auditArguments += @('--generated', $generatedWordOutput)

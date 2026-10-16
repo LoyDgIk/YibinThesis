@@ -445,8 +445,8 @@ function Assert-LiteratureReviewProfile {
             if (-not [string]::IsNullOrWhiteSpace((Get-ParagraphText $paragraph))) { $paragraph }
         }
     )
-    if ($bodyParagraphs.Count -eq 0 -or (Get-StyleName $bodyParagraphs[0]) -ne '宜宾综述-正文') {
-        throw 'Literature-review body must begin with an unheaded introduction paragraph.'
+    if ($bodyParagraphs.Count -eq 0 -or (Get-StyleName $bodyParagraphs[0]) -ne '宜宾综述-一级标题') {
+        throw 'Literature-review body must begin with a titled chapter; untitled lead-in paragraphs are not allowed.'
     }
     $bodyPage = Get-ReviewPhysicalPage $bodyParagraphs[0]
     if ($bodyPage -ne $abstractPage + 1) { throw 'Literature-review introduction must start on the page after the bilingual abstracts.' }
@@ -454,8 +454,8 @@ function Assert-LiteratureReviewProfile {
     if ($conclusionTitles.Count -ne 1) {
         throw 'Literature-review body is missing its conclusion and outlook heading.'
     }
-    if ($conclusionTitles[0].Range.ListFormat.ListType -ne 0) {
-        throw 'Literature-review conclusion and outlook heading must be unnumbered.'
+    if ((Get-StyleName $conclusionTitles[0]) -ne '宜宾综述-一级标题' -or $conclusionTitles[0].Range.ListFormat.ListType -eq 0) {
+        throw 'Literature-review conclusion and outlook must be a numbered first-level chapter like the preceding chapters.'
     }
     $chapterNumber = 0
     $chapterLabels = @()
@@ -499,7 +499,7 @@ function Assert-LiteratureReviewProfile {
             throw "Literature-review section $sectionIndex must continue Arabic page numbering with one PAGE field."
         }
     }
-    Write-Host "Literature-review audit: 7 cover fields; bilingual abstracts on page $abstractPage; body on page $bodyPage; references on page $referencePage; chapter labels '$($chapterLabels -join ' / ')'; conclusion unnumbered."
+    Write-Host "Literature-review audit: 7 cover fields; bilingual abstracts on page $abstractPage; body on page $bodyPage; references on page $referencePage; chapter labels '$($chapterLabels -join ' / ')'; conclusion numbered as a first-level chapter."
 }
 
 function Set-StyleFont {
@@ -2012,7 +2012,10 @@ try {
         throw "Cover title without a version must use CoverTitle, got '$coverTitleStyle'"
     }
 
-    if ($coverFields.Count -ne 6) { throw "CoverField paragraph count expected 6, got $($coverFields.Count)" }
+    # Six official rows carry nine fixed label paragraphs; the 年级 and 职称
+    # labels are each reused once more, and the fill slots live in sibling
+    # CoverValueLine paragraphs.
+    if ($coverFields.Count -ne 9) { throw "CoverField paragraph count expected 9, got $($coverFields.Count)" }
     if ($coverDates.Count -gt 1) {
         throw "CoverDate paragraph count expected at most 1, got $($coverDates.Count)"
     }
@@ -2027,8 +2030,11 @@ try {
         @{ Tokens = @('专业') },
         @{ Tokens = @('学生姓名') },
         @{ Tokens = @('学号') },
+        @{ Tokens = @('年级') },
         @{ Tokens = @('指导教师（校内）') },
-        @{ Tokens = @('指导教师（校外）') }
+        @{ Tokens = @('职称') },
+        @{ Tokens = @('指导教师（校外）') },
+        @{ Tokens = @('职称') }
     )
     for ($index = 0; $index -lt $coverFields.Count; $index++) {
         $normalized = (Get-ParagraphText -Paragraph $coverFields[$index]) -replace '\s', ''

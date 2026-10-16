@@ -170,5 +170,66 @@ class DeclarationSignatureTests(unittest.TestCase):
             self.assertGreater(len(stream.getvalue()), 0)
 
 
+class SignatureAssetPreparationTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        spec = importlib.util.spec_from_file_location(
+            "yibinthesis_prepare_signature_assets",
+            ROOT / "lib" / "prepare_signature_assets.py",
+        )
+        assert spec is not None and spec.loader is not None
+        cls.module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = cls.module
+        spec.loader.exec_module(cls.module)
+
+    def test_entry_file_may_declare_yibinsetup_without_a_metadata_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entry = root / "smoke.tex"
+            entry.write_text(
+                "\\documentclass[humanities]{yibinthesis}\n"
+                "\\yibinsetup{title = {单文件测试}}\n"
+                "\\begin{document}\\end{document}\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                self.module.locate_metadata(entry, root),
+                entry.resolve(),
+            )
+
+    def test_input_metadata_file_wins_over_the_entry_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entry = root / "main.tex"
+            metadata = root / "metadata.tex"
+            entry.write_text(
+                "\\documentclass[humanities]{yibinthesis}\n"
+                "\\input{metadata}\n"
+                "\\begin{document}\\end{document}\n",
+                encoding="utf-8",
+            )
+            metadata.write_text(
+                "\\yibinsetup{title = {拆分元数据}}\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                self.module.locate_metadata(entry, root),
+                metadata.resolve(),
+            )
+
+    def test_missing_setup_is_reported_against_the_entry_file(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            entry = root / "main.tex"
+            entry.write_text(
+                "\\documentclass[humanities]{yibinthesis}\n",
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(
+                BUILD_WORD.BuildError, r"\\yibinsetup"
+            ):
+                self.module.locate_metadata(entry, root)
+
+
 if __name__ == "__main__":
     unittest.main()

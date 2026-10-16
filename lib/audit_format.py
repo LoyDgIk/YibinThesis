@@ -588,10 +588,20 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
     )
     document_type = type_match.group(1).casefold() if type_match else "thesis"
     is_thesis = document_type == "thesis"
+    is_proposal = document_type == "proposal"
+    has_official_cover = is_thesis or is_proposal
     by_id = styles_by_id(styles_root)
     by_name = style_map(styles_root)
     heading_num_ids: list[str] = []
+    # The literature review carries its own four heading styles; the proposal
+    # reuses the thesis family.  Auditing only the thesis names left review
+    # headings unchecked.
     heading_style_names = (
+        "宜宾综述-一级标题",
+        "宜宾综述-二级标题",
+        "宜宾综述-三级标题",
+        "宜宾综述-四级标题",
+    ) if document_type == "literature-review" else (
         "宜宾论文-一级标题",
         "宜宾论文-二级标题",
         "宜宾论文-三级标题",
@@ -700,14 +710,22 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
     )
     cover_title = cover_titles[0] if len(cover_titles) == 1 else None
     cover_fields = named.get("coverfield", [])
-    audit.equal(f"{prefix}.CoverField.count", len(cover_fields), 6 if is_thesis else 0)
+    # Six thesis rows carry nine fixed labels (学院（部）, 专业, 学生姓名, 学号,
+    # 年级, 指导教师（校内）, 职称, 指导教师（校外）, 职称).  The 2022 proposal
+    # cover has five rows with seven labels: it shares one adviser slot and one
+    # 职称 label.  Values live in sibling CoverValueLine paragraphs in both.
+    audit.equal(
+        f"{prefix}.CoverField.count",
+        len(cover_fields),
+        9 if is_thesis else (7 if is_proposal else 0),
+    )
     audit.true(
         f"{prefix}.CoverVersion.count must be optional and unique",
-        len(named.get("coverversion", [])) <= (1 if is_thesis else 0),
+        len(named.get("coverversion", [])) <= (1 if has_official_cover else 0),
     )
     audit.true(
         f"{prefix}.CoverDate.count must be optional and unique",
-        len(named.get("coverdate", [])) <= (1 if is_thesis else 0),
+        len(named.get("coverdate", [])) <= (1 if has_official_cover else 0),
     )
 
     if cover_logo is not None:
@@ -786,24 +804,39 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
                 "36",
             )
 
-    expected_field_tokens = (
-        ("学院（部）",),
-        ("专业",),
-        ("学生姓名",),
-        ("学号",),
-        ("指导教师（校内）",),
-        ("指导教师（校外）",),
-    )
-    for index, (paragraph, tokens) in enumerate(
+    # Label paragraphs in official row order.  The thesis shares 年级 and 职称
+    # across rows; the 2022 proposal shares only 职称.
+    if is_proposal:
+        expected_field_tokens = (
+            "学部（院）",
+            "专业",
+            "学生姓名",
+            "学号",
+            "年级",
+            "指导教师",
+            "职称",
+        )
+    else:
+        expected_field_tokens = (
+            "学院（部）",
+            "专业",
+            "学生姓名",
+            "学号",
+            "年级",
+            "指导教师（校内）",
+            "职称",
+            "指导教师（校外）",
+            "职称",
+        )
+    for index, (paragraph, token) in enumerate(
         zip(cover_fields, expected_field_tokens, strict=False),
         start=1,
     ):
         text = normalized_field_text(paragraph_text(paragraph))
-        for token in tokens:
-            audit.true(
-                f"{prefix}.cover.field[{index}] missing {token}",
-                normalized_field_text(token) in text,
-            )
+        audit.true(
+            f"{prefix}.cover.field[{index}] missing {token}",
+            normalized_field_text(token) in text,
+        )
 
     cover_layout_tables: list[ET.Element] = []
     seen_cover_tables: set[int] = set()
@@ -814,14 +847,28 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
         if table is not None and id(table) not in seen_cover_tables:
             seen_cover_tables.add(id(table))
             cover_layout_tables.append(table)
-    expected_cover_geometry = (
-        ([1980, 6583], "926"),
-        ([1980, 6763], "925"),
-        ([1800, 6763], "952"),
-        ([1800, 3214, 900, 2572], "925"),
-        ([2880, 2906, 874, 1774], "926"),
-        ([2880, 2906, 874, 1774], "926"),
-    ) if is_thesis else ()
+    if is_thesis:
+        expected_cover_geometry = (
+            ([1980, 6583], "926"),
+            ([1980, 6763], "925"),
+            ([1800, 6763], "952"),
+            ([1800, 3214, 900, 2572], "925"),
+            ([2880, 2906, 874, 1774], "926"),
+            ([2880, 2906, 874, 1774], "926"),
+        )
+    elif is_proposal:
+        # The 2022 work-sheet cover reuses the thesis row widths for its five
+        # rows, keeps a uniform 34 pt exact row height, and merges the two
+        # adviser rows into one shared 指导教师/职称 row.
+        expected_cover_geometry = (
+            ([1980, 6583], "680"),
+            ([1980, 6763], "680"),
+            ([1800, 6763], "680"),
+            ([1800, 3214, 900, 2572], "680"),
+            ([1800, 3214, 900, 2572], "680"),
+        )
+    else:
+        expected_cover_geometry = ()
     audit.equal(
         f"{prefix}.cover.geometry-table.count",
         len(cover_layout_tables),
@@ -932,8 +979,16 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
                 len(active_bottom_borders(cell)),
                 0,
             )
-    audit.equal(f"{prefix}.cover.value-cell.unique-count", len(value_cells), 9 if is_thesis else 0)
-    audit.equal(f"{prefix}.cover.layout-table.count", len(value_tables), 6 if is_thesis else 0)
+    audit.equal(
+        f"{prefix}.cover.value-cell.unique-count",
+        len(value_cells),
+        9 if is_thesis else (7 if is_proposal else 0),
+    )
+    audit.equal(
+        f"{prefix}.cover.layout-table.count",
+        len(value_tables),
+        6 if is_thesis else (5 if is_proposal else 0),
+    )
 
     declaration_title = next(
         (
@@ -2152,13 +2207,6 @@ def main() -> int:
             "Generated DOCX to audit; may be repeated. If omitted, existing "
             "build/word/main.docx and full-featured.docx are audited."
         ),
-    )
-    parser.add_argument(
-        "--manuscript-root",
-        type=Path,
-        action="append",
-        default=None,
-        help="Additional manuscript source root to audit; may be repeated.",
     )
     parser.add_argument(
         "--logo",

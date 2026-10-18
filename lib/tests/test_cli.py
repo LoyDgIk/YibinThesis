@@ -19,6 +19,20 @@ from yibinthesis_cli import build as cli_build  # noqa: E402
 
 
 class CliTests(unittest.TestCase):
+    def test_executable_manifest_includes_runtime_and_license_resources(self) -> None:
+        script = (ROOT / "build_exe.ps1").read_text(encoding="utf-8")
+        resources = dict(re.findall(r"@\('([^']+)', '([^']+)'\)", script))
+        required = {
+            "yibinthesis-common.sty": ".",
+            "tools/refresh_word.ps1": "tools",
+            "LICENSE": ".",
+            "NOTICE": ".",
+        }
+        for source, destination in required.items():
+            with self.subTest(source=source):
+                self.assertEqual(resources.get(source), destination)
+                self.assertTrue((ROOT / source).is_file())
+
     def test_new_creates_external_utf8_project(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             project = Path(temporary) / "我的论文"

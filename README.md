@@ -1,41 +1,71 @@
-# YibinThesis CLI
+# YibinThesis
 
-YibinThesis 是一个面向宜宾学院本科毕业材料的非官方 LaTeX 排版工具。工具仓库只
-维护文档类、转换器、检查器和命令行程序，不保存任何论文稿件。论文源文件应由
-`new` 命令创建到工具仓库之外的独立目录。
+YibinThesis 是面向宜宾学院本科毕业材料的非官方写作与排版工具，支持正式论文、
+文献综述和开题报告的独立项目创建、PDF/DOCX 构建与检查。仓库还提供供 AI 按需读取的
+写作技能，将内容写作要求与模板排版职责分开。
 
-版式依据为 `01_规范模板/最新要求与模板` 中的 2024 人文社科/理工农医模板，以及
-宜宾学院本科毕业论文（设计）撰写规范。学校、学院或专业的新通知优先于本项目，
-提交前仍需由指导教师或所在学院复核。
+仓库维护模板、转换器、检查器、CLI、写作技能与测试示例，不保存用户论文稿件。
+论文源文件由 `new` 命令创建到仓库之外的独立目录。
+
+版式与内容规则依据宜宾学院本科毕业论文（设计）撰写规范及相应文种模板整理，
+支持范围见下文。使用时不需要另行取得规范原件；原始学校文件和已填写的个人样例不随
+发行版提供。学校、学部或专业后续发布的适用要求优先，提交前仍需由指导教师或所在学部复核。
+
+## 主要功能
+
+- 三类材料独立建项，正文、元数据、文献库和图件与工具仓库分离。
+- 从 LaTeX 源文件生成 PDF 和可继续编辑的 DOCX，提供配置化交付文件名与环境检查。
+- Word 默认使用可跳转的数字引文，也可生成原生引用来源数据；中英文作者省略词与数字版次按条目语言处理。
+- AI 写作指南按通用要求、正式论文、文献综述、开题报告、LaTeX 输入及公式分别组织，按任务读取。
 
 ## 安装与调用
 
-需要 Python 3.11 或更高版本。未安装为包时，可直接从源码运行：
+### Windows 发行版
+
+从 [GitHub Releases](https://github.com/LoyDgIk/YibinThesis/releases/latest) 下载
+`yibinthesis.exe` 与 `SHA256SUMS.txt`。在 PowerShell 中运行：
+
+```powershell
+.\yibinthesis.exe --help
+.\yibinthesis.exe new ..\my-thesis --type thesis --discipline humanities
+.\yibinthesis.exe doctor --project ..\my-thesis
+```
+
+exe 可直接用于 CLI 调用，但不是完整的离线排版环境。构建仍按输出类型需要外部
+PowerShell、Python 及相应工具链，具体见下文；请先运行 `doctor` 检查。
+
+### 从源码使用
+
+需要 Python 3.11 或更高版本。在仓库根目录中，可直接运行：
 
 ```powershell
 $env:PYTHONPATH = (Resolve-Path .\lib).Path
 python -m yibinthesis_cli --help
 ```
 
-安装为命令行程序：
+推荐以可编辑模式安装命令行入口，使其使用当前源码目录中的模板资源：
 
 ```powershell
-python -m pip install .
+python -m pip install -e .
 yibinthesis --help
 ```
 
-Windows 发行版可以用 `build_exe.ps1` 生成 PyInstaller 可执行文件：
+### 构建 Windows 可执行文件
+
+在源码目录安装打包依赖，再使用 `build_exe.ps1`：
 
 ```powershell
+python -m pip install -e ".[exe]"
 .\build_exe.ps1
 dist\yibinthesis\yibinthesis.exe --help
+# 单文件输出：
+.\build_exe.ps1 -OneFile
 ```
 
-脚本默认生成 onedir 发行目录，也支持 `-OneFile` 生成单文件 exe。exe 仍需要外部
-LaTeX/Pandoc/Word 工具链才能完成相应的 PDF 或 DOCX 构建。
+脚本默认生成 onedir 发行目录；`-OneFile` 输出 `dist/yibinthesis.exe`。
 
 仓库内的 `.github/workflows/release.yml` 会在推送 `v*` 标签后自动运行 CLI 测试，构建
-单文件 Windows exe，生成 `SHA256SUMS.txt`，并将二者发布到对应的 GitHub Release。也
+单文件 Windows exe，生成 `SHA256SUMS.txt`，并连同 `LICENSE`、`NOTICE` 发布到对应的 GitHub Release。也
 可以从 Actions 页面手动运行，并填写已有标签；发布所需的 `contents: write` 权限已在
 工作流中声明。
 
@@ -79,9 +109,6 @@ yibinthesis new ..\论文项目\我的论文 `
 2022 或 2024，不能由调用者随意混用。`--dry-run` 只显示将要创建的文件，`--force`
 仅允许覆盖脚手架已生成的文件，不会删除目标目录中的其他内容。
 
-CLI 实现按职责拆分在 `lib/yibinthesis_cli/`：参数调度、脚手架生成、构建器适配、运行时
-路径与 UTF-8 文件读写分别位于独立模块。
-
 工具仓库自身拒绝作为 `new` 的目标目录，也没有根 `main.tex`、`metadata.tex` 或
 `chapters/` 写作入口。`examples/` 仅用于回归测试和格式夹具，不是论文工作区。
 
@@ -121,7 +148,8 @@ PDF 是版式主输出，DOCX 用于继续编辑。构建器会从入口目录�
 
 占位字段会在构建时读取并安全化；字段缺失时构建失败，避免发布出错名文件。
 
-工具链探测顺序为环境变量、项目 `.tools/`、PATH 和已知本机缓存。常用环境变量有：
+工具链可通过环境变量显式指定，也会探测 `.tools/`、PATH 和受支持的本机缓存位置。
+实际可用工具以 `doctor` 输出为准。常用环境变量有：
 `YIBINTHESIS_TECTONIC`、`YIBINTHESIS_BIBER`、`YIBINTHESIS_PANDOC`、
 `YIBINTHESIS_PYTHON`、`YIBINTHESIS_LATEXMK` 和 `YIBINTHESIS_XELATEX`。
 
@@ -133,12 +161,63 @@ PDF 是版式主输出，DOCX 用于继续编辑。构建器会从入口目录�
 | 开题报告 | `proposal` | 2022 | 工作表中的七个开题栏目 |
 | 文献综述 | `literature-review` | 2024 | 封面、同页双语摘要、连续正文与参考文献 |
 
-`humanities` 使用“一、/（一）/1./（1）”编号，`science` 使用“1/1.1/1.1.1/1.1.1.1”。
-章节、摘要、元数据、引文和公式的作者输入要求见[写作规范](docs/writing-guide.md)。
-模板提供 A4 单面、左 3 cm 及其余 2.5 cm 页边距、宋体/黑体/楷体与 Times New Roman
-字体层级、1.5 倍行距、首行缩进两字、三线表、按章图表公式编号、GB/T 7714-2015
-顺序编码引用，以及“致谢→参考文献→附录”的后置顺序。缺少学校字体时默认使用兼容
-字体预览，最终提交可在 `\\documentclass` 中加入 `strictfonts` 强制检查。
+两类学科采用各自的章节编号体系，具体层级随文种处理，不需要手写显示编号。综述正文
+以无标题引言开始，按主题综合分析，末章为“结论与展望”；不套用正式论文的五节绪论。
+开题报告按七个栏目填写，尚未完成的工作按计划表述。
+
+模板处理页面、字体、标题、图表、公式编号及 GB/T 7714-2015 顺序编码引用。
+正式论文后置部分由入口文件装配，脚手架采用“致谢→参考文献→附录”的顺序。
+不同文种的具体版式与接口见[文档类型与入口](docs/document-types.md)，不以一套
+页面或编号参数覆盖三类材料。缺少学校字体时默认使用兼容字体预览；需要严格检查时，
+在 `\documentclass` 选项中加入 `strictfonts`。
+
+### Word 引用与刷新
+
+- `linked` 为默认模式：上标数字引文通过书签和 `REF` 域跳转到文后条目。
+- `native` 额外写入 Word `CITATION` 域和来源数据；不会自动安装或修改 Word 全局引用样式。
+- 4 人及以上作者保留前 3 人，中文显示 `, 等.`，英文显示 `, et al.`；英文数字版次使用 `4th ed.` 等写法。
+- 文献库保留完整作者及版次信息，建议显式填写 `langid`；未标注时，Word 构建按题名是否含汉字区分中英文。
+- `--word-refresh auto` 检测到 Microsoft Word 时刷新域和分页；`always` 强制要求 Word，`never` 跳过刷新。
+
+DOCX 可编辑不代表其他编辑器的分页与 Word 完全一致。最终交付，尤其是含跨页长表时，
+建议在安装 Microsoft Word 的环境使用 `--word-refresh always`。详细行为见
+[构建配置](docs/project-config.md#word-引用模式)。
+
+## AI 写作技能
+
+技能入口为 [yibinthesis-writing](skills/yibinthesis-writing/SKILL.md)。在支持技能的 AI
+环境中，按该环境的加载方式使用此目录。技能在仓库中独立提供，不应将下载 CLI exe
+视为已经为 AI 安装了技能。
+
+| 当前任务 | 按需读取 |
+| --- | --- |
+| 写作的共用规则与统计口径 | [通用写作要求](skills/yibinthesis-writing/references/writing-requirements.md) |
+| 正式论文摘要、绪论、主体、分析讨论与结论 | [正式论文写作](skills/yibinthesis-writing/references/thesis-writing.md) |
+| 综述选材、综合比较、导言、主题论述与总结 | [文献综述写作](skills/yibinthesis-writing/references/literature-review-writing.md) |
+| 开题计划、研究方法、可行性和进度 | [开题报告写作](skills/yibinthesis-writing/references/proposal-writing.md) |
+| 入口、元数据、章节和引文源文件 | [LaTeX 作者接口](skills/yibinthesis-writing/references/latex-writing.md) |
+| 公式、变量、单位与公式引用 | [公式编写](skills/yibinthesis-writing/references/equations.md) |
+
+内容写作读取通用要求及当前文种，不默认载入全部指南；只改 LaTeX 语法时仅读作者接口。
+技能已内置必要的写作要求，不依赖未发布的学校文件或维护者目录，也不预置个人资料。
+AI 负责依据用户材料组织内容，排版和构建由工具处理。导航见[写作指南](docs/writing-guide.md)。
+
+## 构建依赖
+
+| 操作 | 所需环境 |
+| --- | --- |
+| 源码 CLI | Python 3.11+；构建适配需要 PowerShell |
+| PDF 构建 | XeLaTeX/latexmk 或 Tectonic、Biber，以及模板所需 LaTeX 宏包与字体；构建中的 Python 辅助步骤按实际素材使用相应依赖 |
+| DOCX 构建 | Python、Pandoc、`requirements-word.txt` 中的 python-docx 与 Pillow |
+| DOCX 域刷新与最终分页 | Microsoft Word；跳过刷新可生成待更新域的文档 |
+
+在源码目录安装 Word Python 依赖：
+
+```powershell
+python -m pip install -r requirements-word.txt
+```
+
+工具链和字体不随单文件 exe 一并提供；先运行 `doctor`，再按所需输出补齐依赖。
 
 ## 开发检查
 
@@ -149,22 +228,18 @@ python lib/audit_format.py
 python lib/docx_audit.py <template.docx> --json build/docx-audit.json
 ```
 
-完整 PDF/Word 检查需要安装 XeLaTeX 或 Tectonic、Biber、Pandoc、python-docx、Pillow，
-以及在需要刷新域和分页时安装 Microsoft Word。
-
-针对学校模板的只读结构审计：
+针对用户自行提供的 DOCX 模板做只读结构审计：
 
 ```powershell
 python lib/docx_audit.py `
-  "..\01_规范模板\最新要求与模板\质检学部-文献综述模板（工科类）2024（模板）.docx" `
-  "..\01_规范模板\最新要求与模板\质检学部-文献综述模板（文科类）2024（模板）.docx" `
-  "..\01_规范模板\最新要求与模板\罗殷开题报告.docx" `
+  "X:\templates\thesis.docx" `
+  "X:\templates\literature-review.docx" `
   --json build/docx-audit
 ```
 
 该审计只读取 DOCX，不修改学校原件；它报告分节、页面几何、字体字号、段落参数、表格列网格、
-单元格边框和包内页眉页脚/批注部件。视觉验收仍需在安装 Word 或 LibreOffice 的环境中用
-`render_docx.py` 渲染并逐页检查。
+单元格边框和包内页眉页脚/批注部件。视觉验收仍需使用 Word 或其他可用的文档渲染工具
+逐页检查；仓库不附带 `render_docx.py` 或原始学校模板。
 
 ## 目录
 
@@ -184,6 +259,7 @@ YibinThesis/
 ├── build.ps1
 ├── build_exe.ps1
 ├── examples/                 # 只读回归夹具
+├── skills/                   # 按任务读取的 AI 写作与 LaTeX 技能
 ├── tests/
 ├── assets/
 ├── word/
@@ -191,5 +267,11 @@ YibinThesis/
 └── docs/
 ```
 
-模板源代码采用 MIT License。校名、校徽、校名字样及其他机构标识不包含在 MIT 授权
-范围内，参考项目和独立实现边界见 `NOTICE`。
+## 开源许可
+
+项目自身代码采用 [GNU GPLv3](LICENSE)（`GPL-3.0-only`）。修改和再分发时须遵守
+该许可证，发布对应二进制时也须按许可证提供对应源代码。
+
+校名、校徽、校名字样及其他机构标识不包含在项目代码的许可范围内。随附 CSL 文献样式
+继续遵循其原有的 [CC BY-SA 3.0 声明](word/CSL-NOTICE.txt)，不改为 GPLv3。
+第三方许可、机构标识与独立实现边界见 [NOTICE](NOTICE)。

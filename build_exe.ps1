@@ -18,14 +18,18 @@ if ($Clean -and (Test-Path -LiteralPath $workDirectory)) {
 }
 
 $dataFiles = @(
+    @('LICENSE', '.'),
+    @('NOTICE', '.'),
     @('build.ps1', '.'),
     @('yibinthesis.project.schema.json', '.'),
     @('yibinthesis.cls', '.'),
+    @('yibinthesis-common.sty', '.'),
     @('yibinthesis-proposal.sty', '.'),
     @('yibinthesis-literature-review.sty', '.'),
     @('assets', 'assets'),
     @('tests', 'tests'),
     @('word', 'word'),
+    @('tools/refresh_word.ps1', 'tools'),
     @('lib/build_word.py', 'lib'),
     @('lib/word_core.py', 'lib'),
     @('lib/word_oxml.py', 'lib'),

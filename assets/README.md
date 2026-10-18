@@ -9,4 +9,4 @@ assets/yibin-university-logo.png
 `5E3A203868F8EE661D7185D35404C555399EEC14CF7C467DAAC12DA54F516AFA`。
 若该文件不存在，LaTeX 与 Word 封面都会自动使用文字降级。
 
-机构名称、校徽、校名字样和其他识别标志不包含在项目 MIT 许可证内。
+机构名称、校徽、校名字样和其他识别标志不包含在项目代码的 GPLv3 许可范围内。

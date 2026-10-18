@@ -8,6 +8,10 @@ version = "0.3.0"
 description = "宜宾学院本科毕业论文 LaTeX 模板命令行工具"
 requires-python = ">=3.11"
 authors = [{ name = "YibinThesis contributors" }]
+license = { file = "LICENSE" }
+classifiers = [
+    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+]
 
 [project.optional-dependencies]
 exe = ["pyinstaller>=6.0"]

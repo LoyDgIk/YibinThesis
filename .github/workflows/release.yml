@@ -72,8 +72,8 @@ jobs:
           $checksums = ".\dist\SHA256SUMS.txt"
           gh release view $tag *> $null
           if ($LASTEXITCODE -eq 0) {
-            gh release upload $tag $asset $checksums --clobber
+            gh release upload $tag $asset $checksums LICENSE NOTICE --clobber
           }
           else {
-            gh release create $tag $asset $checksums --title "YibinThesis $tag" --generate-notes --latest
+            gh release create $tag $asset $checksums LICENSE NOTICE --title "YibinThesis $tag" --generate-notes --latest
           }

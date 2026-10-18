@@ -1818,6 +1818,57 @@ def prepare_bibliography(
     return output
 
 
+def _localize_bibliography_terms(document, citations, bibliography_items) -> None:
+    """Localize citeproc's author and edition terms, retaining formatted runs."""
+    by_key = {str(item.get("id", "")): item for item in bibliography_items}
+    style_ids = {
+        style.style_id for style in document.styles
+        if style.name in {STYLE_BIBLIOGRAPHY, STYLE_REVIEW_BIBLIOGRAPHY, "Bibliography"}
+    }
+    for paragraph in document.element.body.iter(qn("w:p")):
+        style = paragraph.find("w:pPr/w:pStyle", paragraph.nsmap)
+        if style is None or style.get(qn("w:val")) not in style_ids:
+            continue
+        nodes = list(paragraph.iter(qn("w:t")))
+        text = "".join(node.text or "" for node in nodes)
+        match = re.match(r"^\[(\d+)\]", text)
+        if not match:
+            continue
+        number = int(match.group(1))
+        if not 1 <= number <= len(citations.order):
+            continue
+        item = by_key.get(citations.order[number - 1], {})
+        language = str(item.get("language", "")).lower().replace("_", "-")
+        if language in {"english", "en"} or language.startswith("en-"):
+            term = "et al"
+        elif language in {"chinese", "zh"} or language.startswith("zh-"):
+            term = "等"
+        elif not language and item.get("title"):
+            term = "等" if re.search(r"[\u3400-\u9fff]", str(item["title"])) else "et al"
+        else:
+            continue
+        replacements = []
+        author_match = re.match(r"^\[\d+\][^.]*, (等|et al)(?=\.)", text)
+        if author_match:
+            replacements.append((*author_match.span(1), term))
+        edition = str(item.get("edition", ""))
+        if term == "et al" and re.fullmatch(r"[1-9][0-9]*", edition):
+            edition_match = re.search(r"(?<=\]\. )" + edition + r"\s*版(?=\.)", text)
+            if edition_match:
+                number = int(edition)
+                suffix = "th" if 11 <= number % 100 <= 13 else {1: "st", 2: "nd", 3: "rd"}.get(number % 10, "th")
+                replacements.append((*edition_match.span(), f"{edition}{suffix} ed"))
+        # Work backwards so changing a later term cannot shift earlier offsets.
+        for start, end, replacement in reversed(replacements):
+            offset = 0
+            for node in nodes:
+                value = node.text or ""
+                left, right = max(start - offset, 0), min(end - offset, len(value))
+                if left < right:
+                    node.text = value[:left] + (replacement if offset <= start else "") + value[right:]
+                offset += len(value)
+
+
 def custom_block(style: str, content: str) -> str:
     return f'::: {{custom-style="{style}"}}\n{content.strip()}\n:::'
 
@@ -2768,6 +2819,7 @@ def postprocess_docx(
     if citation_mode not in {"linked", "native"}:
         raise BuildError(f"不支持的 Word citation mode：{citation_mode}")
     output_docx.parent.mkdir(parents=True, exist_ok=True)
+    _localize_bibliography_terms(document, citations, bibliography_items)
     document.save(output_docx)
     if citation_mode == "native":
         _inject_bibliography_sources(output_docx, citations, bibliography_items)

@@ -1,4 +1,4 @@
 interface:
-  display_name: "YibinThesis 写作规范"
-  short_description: "宜宾学院综述、正式论文和开题报告的 LaTeX 作者写作手册"
-  default_prompt: "请使用 $yibinthesis-writing 按稿件文种撰写或修改 LaTeX 内容。"
+  display_name: "YibinThesis 写作与 LaTeX"
+  short_description: "依据学校要求编写论文、文献综述和开题报告内容及 LaTeX 源文件"
+  default_prompt: "请使用 $yibinthesis-writing，依据稿件文种与可核验材料编写或修改正文和 LaTeX 源文件。"

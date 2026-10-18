@@ -440,6 +440,7 @@ def _postprocess_proposal_docx(
         settings.append(update_fields)
     update_fields.set(qn("w:val"), "true")
     output_docx.parent.mkdir(parents=True, exist_ok=True)
+    _localize_bibliography_terms(document, citations, bibliography_items)
     document.save(output_docx)
     if citation_mode == "native":
         _inject_bibliography_sources(output_docx, citations, bibliography_items)
@@ -718,6 +719,7 @@ def _postprocess_review_docx(
         settings.append(update_fields)
     update_fields.set(qn("w:val"), "true")
     output_docx.parent.mkdir(parents=True, exist_ok=True)
+    _localize_bibliography_terms(document, citations, bibliography_items)
     document.save(output_docx)
     if citation_mode == "native":
         _inject_bibliography_sources(output_docx, citations, bibliography_items)

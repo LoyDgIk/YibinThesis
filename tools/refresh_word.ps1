@@ -445,8 +445,8 @@ function Assert-LiteratureReviewProfile {
             if (-not [string]::IsNullOrWhiteSpace((Get-ParagraphText $paragraph))) { $paragraph }
         }
     )
-    if ($bodyParagraphs.Count -eq 0 -or (Get-StyleName $bodyParagraphs[0]) -ne '宜宾综述-一级标题') {
-        throw 'Literature-review body must begin with a titled chapter; untitled lead-in paragraphs are not allowed.'
+    if ($bodyParagraphs.Count -eq 0 -or (Get-StyleName $bodyParagraphs[0]) -ne '宜宾综述-正文') {
+        throw 'Literature-review body must begin with an unheaded introduction paragraph.'
     }
     $bodyPage = Get-ReviewPhysicalPage $bodyParagraphs[0]
     if ($bodyPage -ne $abstractPage + 1) { throw 'Literature-review introduction must start on the page after the bilingual abstracts.' }

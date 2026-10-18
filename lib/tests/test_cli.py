@@ -76,7 +76,7 @@ class CliTests(unittest.TestCase):
                     self.assertIn(rf"\{keywords}{{", abstract)
                 body = (latex / "chapters" / "body.tex").read_text(encoding="utf-8")
                 first_paragraph = next(line for line in body.splitlines() if line and not line.startswith("%"))
-                self.assertTrue(first_paragraph.startswith(r"\chapter{"))
+                self.assertFalse(first_paragraph.startswith("\\"))
                 self.assertNotRegex(body, r"\\(?:chapter|section|yibinunnumberedchapter)\*?\{引言\}")
                 self.assertNotIn(r"\yibinclosingchapter", body)
                 chapters = re.findall(r"\\chapter\{([^}]+)\}", body)

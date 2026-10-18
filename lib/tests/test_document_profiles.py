@@ -474,6 +474,7 @@ class WordProfileStructureTests(unittest.TestCase):
         source.add_paragraph("An English abstract.", style="EnglishAbstract")
         source.add_paragraph("Keywords: evidence; standards; research", style="Keywords")
         source.add_paragraph(BUILD_WORD.SECTION_REVIEW_ABSTRACT_END)
+        source.add_paragraph("无标题引言正文。", style="Body Text")
         source.add_paragraph("研究背景", style=BUILD_WORD.STYLE_HEADING_1)
         source.add_paragraph("章节正文。", style="Body Text")
         source.add_paragraph("图1 技术路线", style="Caption")
@@ -523,7 +524,7 @@ class WordProfileStructureTests(unittest.TestCase):
             BUILD_WORD.STYLE_REVIEW_HEADING_1,
         )
         self.assertEqual(next(p for p in document.paragraphs if p.text == "结论与展望").style.name, BUILD_WORD.STYLE_REVIEW_HEADING_1)
-        self.assertEqual(next(p for p in document.paragraphs if p.text == "章节正文。").style.name, BUILD_WORD.STYLE_REVIEW_BODY)
+        self.assertEqual(next(p for p in document.paragraphs if p.text == "无标题引言正文。").style.name, BUILD_WORD.STYLE_REVIEW_BODY)
         self.assertFalse(document.tables)
         cover_rows = [p for p in document.paragraphs if p.style.name == BUILD_WORD.STYLE_REVIEW_COVER_FIELD]
         self.assertEqual(len(cover_rows), 7)
@@ -664,7 +665,7 @@ class WordProfileStructureTests(unittest.TestCase):
                     encoding="utf-8",
                 )
                 (chapters / "body.tex").write_text(
-                    "\\chapter{相关研究}\n"
+                    "这是无标题引言。\n\n\\chapter{相关研究}\n"
                     "正文数学 $k$ 保持可编辑。\\yibincite{fixture_standard,fixture_math}\n"
                     "\\section{研究方法}\n方法正文。\n"
                     "\\chapter{结论与展望}\n结论正文。\n",
@@ -697,7 +698,7 @@ class WordProfileStructureTests(unittest.TestCase):
                 self.assertEqual(len(document.sections), 4)
                 self.assertLess(texts.index(expected_title), texts.index("摘要"))
                 self.assertLess(texts.index("摘要"), texts.index("Abstract"))
-                self.assertLess(texts.index("Abstract"), texts.index("相关研究"))
+                self.assertLess(texts.index("Abstract"), texts.index("这是无标题引言。"))
                 self.assertIn("关键词：资料；标准；研究", texts)
                 self.assertIn("Keywords: evidence; standards; research", texts)
                 self.assertIn("（测试学部 测试市 000000）", texts)

@@ -313,6 +313,28 @@ class CitationRegistry:
         return ""
 
 
+def _citation_cluster_parts(keys: list[str], citation_numbers: dict[str, int]) -> list[tuple[str, str | None]]:
+    """Return citation keys grouped as [1-3,5] without inserting spaces."""
+    runs: list[list[str]] = []
+    start = 0
+    while start < len(keys):
+        end = start
+        while (
+            end + 1 < len(keys)
+            and citation_numbers[keys[end + 1]] == citation_numbers[keys[end]] + 1
+        ):
+            end += 1
+        runs.append(keys[start : end + 1])
+        start = end + 1
+    parts: list[tuple[str, str | None]] = []
+    for run in runs:
+        if len(run) >= 3:
+            parts.append((run[0], run[-1]))
+        else:
+            parts.extend((key, None) for key in run)
+    return parts
+
+
 def strip_tex_comments(text: str) -> str:
     """Remove unescaped LaTeX comments while retaining line structure."""
     output: list[str] = []

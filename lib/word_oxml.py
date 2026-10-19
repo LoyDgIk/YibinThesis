@@ -2328,8 +2328,9 @@ def _replace_reference_markers(document: Document, labels: LabelRegistry, citati
                     )
                     open_run = _plain_run("[", character_style_id=citation_style_id)
                     parent.insert(index, open_run); index += 1
-                    for key_index, key in enumerate(keys):
-                        if key_index:
+                    rendered = _citation_cluster_parts(keys, citation_numbers)
+                    for item_index, (key, range_end) in enumerate(rendered):
+                        if item_index:
                             sep = copy.deepcopy(open_run); sep.find(qn("w:t")).text = ","; parent.insert(index, sep); index += 1
                         number = citation_numbers[key]
                         instruction = (
@@ -2345,6 +2346,22 @@ def _replace_reference_markers(document: Document, labels: LabelRegistry, citati
                         ):
                             parent.insert(index, field_run)
                             index += 1
+                        if range_end is not None:
+                            hyphen = copy.deepcopy(open_run); hyphen.find(qn("w:t")).text = "-"; parent.insert(index, hyphen); index += 1
+                            end_number = citation_numbers[range_end]
+                            end_instruction = (
+                                f" CITATION {range_end} \\l 2052 \\* CHARFORMAT "
+                                if mode == "native"
+                                else f" REF {citation_names[range_end]} \\h \\* CHARFORMAT "
+                            )
+                            for field_run in _complex_field_runs(
+                                end_instruction,
+                                str(end_number),
+                                character_style_id=citation_style_id,
+                                locked=mode == "native",
+                            ):
+                                parent.insert(index, field_run)
+                                index += 1
                     close_run = copy.deepcopy(open_run); close_run.find(qn("w:t")).text = "]"; parent.insert(index, close_run); index += 1
                 cursor = match.end()
             if cursor < len(value):

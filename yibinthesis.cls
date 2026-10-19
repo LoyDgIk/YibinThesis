@@ -80,10 +80,13 @@
   \RequirePackage[
     backend=biber,
     style=gb7714-2015,
+    citestyle=numeric-comp,
     sorting=none,
     giveninits=true,
-    defernumbers=false
+    defernumbers=false,
+    sortcites=true
   ]{biblatex}
+  \DeclareDelimFormat{multicitedelim}{,}
 \fi
 \RequirePackage[
   unicode=true,

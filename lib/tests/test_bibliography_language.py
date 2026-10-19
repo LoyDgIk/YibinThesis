@@ -16,6 +16,17 @@ import word_core as WORD
 
 
 class BibliographyLanguageTests(unittest.TestCase):
+    def test_citation_clusters_use_gb_style_ranges_without_spaces(self):
+        numbers = {f"k{number}": number for number in range(1, 9)}
+        self.assertEqual(
+            WORD._citation_cluster_parts(["k1", "k2", "k3", "k5", "k7", "k8"], numbers),
+            [("k1", "k3"), ("k5", None), ("k7", None), ("k8", None)],
+        )
+        self.assertEqual(
+            WORD._citation_cluster_parts(["k1", "k2"], numbers),
+            [("k1", None), ("k2", None)],
+        )
+
     def test_real_citeproc_edition_language(self):
         pandoc = WORD.find_pandoc(None, ROOT)
         with tempfile.TemporaryDirectory() as temporary:

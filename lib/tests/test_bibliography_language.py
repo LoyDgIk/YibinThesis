@@ -16,6 +16,64 @@ import word_core as WORD
 
 
 class BibliographyLanguageTests(unittest.TestCase):
+    def test_reference_visibility_options_are_independent(self):
+        pandoc = WORD.find_pandoc(None, ROOT)
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            bibliography = directory / "references.bib"
+            bibliography.write_text(
+                "@article{sample, author={Alpha, A}, title={A verifiable title}, "
+                "journal={Journal}, year={2020}, volume={1}, number={2}, "
+                "pages={1-4}, doi={10.1234/test}, url={https://example.org}, "
+                "urldate={2025-01-02}, langid={english}}",
+                encoding="utf-8",
+            )
+            configurations = (
+                ("default", True, True, True, True),
+                ("no-doi", False, True, False, True),
+                ("no-url", True, False, True, False),
+            )
+            for name, include_doi, include_url, expect_doi, expect_url in configurations:
+                with self.subTest(name=name):
+                    job_directory = directory / name
+                    job_directory.mkdir()
+                    prepared = WORD.prepare_bibliography(
+                        bibliography,
+                        pandoc=pandoc,
+                        cwd=directory,
+                        temp_dir=job_directory,
+                        include_doi=include_doi,
+                        include_url=include_url,
+                    )
+                    output = job_directory / "references.docx"
+                    markdown = job_directory / "input.md"
+                    markdown.write_text("[@sample]", encoding="utf-8")
+                    subprocess.run(
+                        [
+                            str(pandoc), "--citeproc", "--from=markdown", "--to=docx",
+                            f"--bibliography={prepared}",
+                            f"--csl={ROOT / 'word/china-national-standard-gb-t-7714-2015-numeric.csl'}",
+                            f"--output={output}", str(markdown),
+                        ],
+                        cwd=directory,
+                        check=True,
+                    )
+                    text = "\n".join(paragraph.text for paragraph in Document(output).paragraphs)
+                    self.assertEqual("10.1234/test" in text, expect_doi)
+                    self.assertEqual("https://example.org" in text, expect_url)
+                    self.assertEqual("2025-01-02" in text, expect_url)
+                    source_items = json.loads(
+                        WORD.bibliography_source_items_path(prepared).read_text(encoding="utf-8")
+                    )
+                    self.assertEqual(source_items[0]["DOI"], "10.1234/test")
+                    self.assertEqual(source_items[0]["URL"], "https://example.org")
+
+    def test_document_class_options_include_reference_visibility(self):
+        options = WORD.parse_document_class_options(
+            r"\documentclass[proposal,humanities,no-doi,no-url]{yibinthesis}"
+        )
+        self.assertEqual(options, {"proposal", "humanities", "no-doi", "no-url"})
+
     def test_citation_clusters_use_gb_style_ranges_without_spaces(self):
         numbers = {f"k{number}": number for number in range(1, 9)}
         self.assertEqual(

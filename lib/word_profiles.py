@@ -244,21 +244,15 @@ def _append_proposal_table(
         "references": "参考文献目录",
         "advisor-opinion": "指导教师意见",
     }
-    prompts = {
-        "research-status": "国内、国外研究现状应分开概述；概述时语言简练、重点突出。",
-        "research-approach": "主要描述研究方法、技术路线、可行性论证等。",
-        "schedule": "进度（应与二级学部（院）的进度大体一致）",
-        "references": "根据《信息与文献—参考文献著录规则》（GB/T 7714-2015），规范表述。",
-    }
     minimum_heights = {
         "significance": 165.15,
         "research-status": 297.15,
         "research-content": 183.15,
-        "research-approach": 411.6,
         "schedule": 140.1,
         "references": 383.6,
         "advisor-opinion": 99.9,
     }
+    # The long research-approach field uses its content height to avoid a blank page tail.
     table = document.add_table(rows=len(fields), cols=2)
     table.alignment = WD_TABLE_ALIGNMENT.CENTER
     table.autofit = False
@@ -270,8 +264,9 @@ def _append_proposal_table(
     _set_form_table_borders(table)
     for row_index, key in enumerate(fields):
         row = table.rows[row_index]
-        row.height = Pt(minimum_heights[key])
-        row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        if key in minimum_heights:
+            row.height = Pt(minimum_heights[key])
+            row.height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
         row_properties = row._tr.get_or_add_trPr()
         cant_split = row_properties.find(qn("w:cantSplit"))
         if cant_split is not None:
@@ -285,18 +280,7 @@ def _append_proposal_table(
         label_paragraph.style = document.styles[STYLE_PROPOSAL_LABEL]
         label_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         label_paragraph.add_run("\n".join(labels[key]))
-        if key in prompts:
-            prompt = body_cell.paragraphs[0]
-            prompt.style = document.styles[STYLE_PROPOSAL_PROMPT]
-            prompt.text = prompts[key]
-            anchor = body_cell.add_paragraph(style=STYLE_PROPOSAL_BODY)
-            for node in field_nodes[key]:
-                anchor._p.addprevious(node)
-            for paragraph in body_cell.paragraphs:
-                if paragraph.style.name in {STYLE_BODY, STYLE_FIRST_PARAGRAPH, "Normal", "Body Text"}:
-                    paragraph.style = document.styles[STYLE_PROPOSAL_BODY]
-        else:
-            _move_nodes_to_cell(body_cell, field_nodes[key], document)
+        _move_nodes_to_cell(body_cell, field_nodes[key], document)
         _fit_nested_tables_to_cell(body_cell)
         _restart_cell_heading_numbering(document, body_cell, heading_abstract_id)
         if key == "advisor-opinion":
@@ -984,16 +968,26 @@ def _build_non_thesis(
             kept.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(markdown_file, kept)
 
+        class_options = parse_document_class_options(main_text)
         citeproc_bibliography = prepare_bibliography(
             bibliography,
             pandoc=pandoc,
             cwd=main_dir,
             temp_dir=temp_dir,
+            include_url="no-url" not in class_options,
+            include_doi="no-doi" not in class_options,
         )
         bibliography_items: list[dict[str, object]] = []
         bibliography_json = citeproc_bibliography.with_suffix(".json") if citeproc_bibliography != bibliography else citeproc_bibliography
         if bibliography_json.suffix.lower() == ".json":
             parsed_items = json.loads(bibliography_json.read_text(encoding="utf-8"))
+            if isinstance(parsed_items, list):
+                bibliography_items = [
+                    item for item in parsed_items if isinstance(item, dict)
+                ]
+        source_items_path = bibliography_source_items_path(citeproc_bibliography)
+        if source_items_path.is_file():
+            parsed_items = json.loads(source_items_path.read_text(encoding="utf-8"))
             if isinstance(parsed_items, list):
                 bibliography_items = [
                     item for item in parsed_items if isinstance(item, dict)

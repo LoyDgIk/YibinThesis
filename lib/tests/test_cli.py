@@ -56,7 +56,7 @@ class CliTests(unittest.TestCase):
             main = project / "latex" / "main.tex"
             metadata = project / "latex" / "metadata.tex"
             self.assertTrue(main.is_file())
-            self.assertIn(r"\documentclass[thesis,science]{yibinthesis}", main.read_text(encoding="utf-8"))
+            self.assertIn(r"\documentclass[thesis,science,no-doi]{yibinthesis}", main.read_text(encoding="utf-8"))
             self.assertIn("中文题目", metadata.read_text(encoding="utf-8"))
             config = json.loads((project / "yibinthesis.project.json").read_text(encoding="utf-8"))
             self.assertEqual(config["main"], "latex/main.tex")
@@ -72,7 +72,7 @@ class CliTests(unittest.TestCase):
                 )
                 latex = project / "latex"
                 main = (latex / "main.tex").read_text(encoding="utf-8")
-                self.assertIn(rf"\documentclass[literature-review,{discipline}]{{yibinthesis}}", main)
+                self.assertIn(rf"\documentclass[literature-review,{discipline},no-doi]{{yibinthesis}}", main)
                 self.assertEqual(
                     re.findall(r"\\input\{([^}]+)\}", main),
                     ["metadata", "chapters/00-abstract-cn", "chapters/01-abstract-en", "chapters/body"],
@@ -196,7 +196,7 @@ class CliTests(unittest.TestCase):
             self.assertEqual(cli.main(["init", str(project), "--type", "proposal"]), 0)
             main = (project / "latex" / "main.tex").read_text(encoding="utf-8")
             metadata = (project / "latex" / "metadata.tex").read_text(encoding="utf-8")
-            self.assertIn(r"\documentclass[proposal,humanities]{yibinthesis}", main)
+            self.assertIn(r"\documentclass[proposal,humanities,no-doi]{yibinthesis}", main)
             self.assertIn("template-year           = 2022", metadata)
 
     def test_new_proposal_has_semantic_headings_in_two_fields(self) -> None:
@@ -217,6 +217,13 @@ class CliTests(unittest.TestCase):
                 for name in ("significance", "research-status"):
                     self.assertRegex(fields[name], r"^\{\s*\\section\{[^}]+\}")
                 self.assertIn(r"\subsection{", fields["research-status"])
+                for hint in (
+                    "% 国内、国外研究现状应分开概述；概述时语言简练、重点突出。",
+                    "% 主要描述研究方法、技术路线、可行性论证等。",
+                    "% 进度应与二级学部（院）的进度大体一致。",
+                    "% 根据《信息与文献—参考文献著录规则》（GB/T 7714-2015），规范表述。",
+                ):
+                    self.assertIn(hint, main)
                 for name in ("research-content", "research-approach", "schedule", "references", "advisor-opinion"):
                     self.assertNotRegex(fields[name], r"\\(?:section|subsection|subsubsection|paragraph)\{")
                 self.assertNotIn("（1）", main)

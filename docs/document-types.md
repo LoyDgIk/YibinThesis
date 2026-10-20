@@ -18,6 +18,17 @@ YibinThesis 的一个 `main.tex` 只生成一种文档。文档类型由 `\docum
 `yibinthesis-literature-review.sty` 实现。使用者仍只需加载 `yibinthesis` 类，类会按
 文档类型自动加载对应模块，不需要在 `main.tex` 中手动 `\usepackage`。
 
+`new` 创建的三类项目默认带有 `no-doi`，隐藏参考文献列表中的 DOI，URL 仍保留。
+需要显示 DOI 时，删除 `main.tex` 中的 `no-doi` 即可；未带隐藏选项的既有项目仍显示来源中已有的字段。
+若所在学部有不同著录要求，可在
+`\documentclass` 选项中分别加入 `no-url` 或 `no-doi`；两项互相独立，也可同时使用。
+该设置同时控制 PDF 与 Word 中参考文献列表的显示，不删除 `references.bib` 中的来源数据。
+例如：
+
+```tex
+\documentclass[proposal,humanities,no-doi]{yibinthesis}
+```
+
 ## 毕业论文
 
 `thesis` 是默认类型，旧项目只写 `\documentclass[humanities]{yibinthesis}` 仍然有效。

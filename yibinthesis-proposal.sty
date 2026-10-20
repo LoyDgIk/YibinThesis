@@ -96,9 +96,41 @@
     \yibin@proposallabelnode{#1}},
   overlay last={%
     \yibin@proposalframe
+    \yibin@proposaldivider},
+  #3
+}
+
+\newtcolorbox{yibin@proposalboxnatural}[2]{%
+  enhanced,
+  breakable,
+  colback=white,
+  frame hidden,
+  boxrule=0.75pt,
+  arc=0pt,
+  outer arc=0pt,
+  boxsep=0pt,
+  left=52pt,
+  right=9pt,
+  top=8pt,
+  bottom=8pt,
+  before skip=0pt,
+  after skip=0pt,
+  overlay unbroken={%
+    \yibin@proposalframe
     \yibin@proposaldivider
     \yibin@proposallabelnode{#1}},
-  #3
+  overlay first={%
+    \yibin@proposalframe
+    \yibin@proposaldivider
+    \yibin@proposallabelnode{#1}},
+  overlay middle={%
+    \yibin@proposalframe
+    \yibin@proposaldivider
+    \yibin@proposallabelnode{#1}},
+  overlay last={%
+    \yibin@proposalframe
+    \yibin@proposaldivider},
+  #2
 }
 
 \newcommand{\yibin@proposalbody}[1]{%
@@ -112,10 +144,6 @@
   \endgroup
 }
 
-\newcommand{\yibin@proposalprompt}[1]{%
-  \noindent{\yibinsong\zihao{-4}#1}\par
-}
-
 \newcommand{\yibin@proposal@field@significance}[1]{%
   \begin{yibin@proposalbox}{\shortstack{选\\题\\意\\义}}{165.15pt}{}
     \yibin@proposalbody{#1}
@@ -124,7 +152,6 @@
 
 \expandafter\newcommand\csname yibin@proposal@field@research-status\endcsname[1]{%
   \begin{yibin@proposalbox}{\shortstack{国\\内\\外\\研\\究\\现\\状\\概\\述}}{297.15pt}{}
-    \yibin@proposalprompt{国内、国外研究现状应分开概述；概述时语言简练、重点突出。}
     \yibin@proposalbody{#1}
   \end{yibin@proposalbox}
 }
@@ -136,22 +163,20 @@
 }
 
 \expandafter\newcommand\csname yibin@proposal@field@research-approach\endcsname[1]{%
-  \begin{yibin@proposalbox}{\shortstack{拟\\采\\用\\的\\研\\究\\思\\路}}{411.6pt}{}
-    \yibin@proposalprompt{主要描述研究方法、技术路线、可行性论证等。}
+  % This long narrative can span pages; natural height avoids a blank tail at a page break.
+  \begin{yibin@proposalboxnatural}{\shortstack{拟\\采\\用\\的\\研\\究\\思\\路}}{}
     \yibin@proposalbody{#1}
-  \end{yibin@proposalbox}
+  \end{yibin@proposalboxnatural}
 }
 
 \newcommand{\yibin@proposal@field@schedule}[1]{%
   \begin{yibin@proposalbox}{\shortstack{研\\究\\工\\作\\安\\排\\及\\进\\度}}{140.1pt}{}
-    \yibin@proposalprompt{进度（应与二级学部（院）的进度大体一致）}
     \yibin@proposalbody{#1}
   \end{yibin@proposalbox}
 }
 
 \newcommand{\yibin@proposal@field@references}[1]{%
   \begin{yibin@proposalbox}{\shortstack{参\\考\\文\\献\\目\\录}}{383.6pt}{}
-    \yibin@proposalprompt{根据《信息与文献—参考文献著录规则》（GB/T 7714--2015），规范表述。}
     \yibin@proposalbody{#1}
   \end{yibin@proposalbox}
 }

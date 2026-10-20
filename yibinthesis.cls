@@ -13,6 +13,10 @@
 \yibin@sciencefalse
 \newif\ifyibin@bibliography
 \yibin@bibliographytrue
+\newif\ifyibin@url
+\yibin@urltrue
+\newif\ifyibin@doi
+\yibin@doitrue
 \newif\ifyibin@strictfonts
 \yibin@strictfontsfalse
 \newif\ifyibin@proposal
@@ -48,6 +52,8 @@
 \DeclareOption{humanities}{\yibin@sciencefalse}
 \DeclareOption{science}{\yibin@sciencetrue}
 \DeclareOption{nobibliography}{\yibin@bibliographyfalse}
+\DeclareOption{no-url}{\yibin@urlfalse}
+\DeclareOption{no-doi}{\yibin@doifalse}
 \DeclareOption{strictfonts}{\yibin@strictfontstrue}
 \DeclareOption*{\PassOptionsToClass{\CurrentOption}{ctexbook}}
 \ExecuteOptions{humanities}
@@ -77,9 +83,16 @@
 \RequirePackage{enumitem}
 \RequirePackage[absolute,overlay]{textpos}
 \ifyibin@bibliography
+  \ifyibin@url\else
+    \PassOptionsToPackage{url=false}{biblatex}
+  \fi
+  \ifyibin@doi\else
+    \PassOptionsToPackage{doi=false}{biblatex}
+  \fi
   \RequirePackage[
     backend=biber,
     style=gb7714-2015,
+    % numeric-comp keeps pairs comma-separated and compresses runs of three.
     citestyle=numeric-comp,
     sorting=none,
     giveninits=true,

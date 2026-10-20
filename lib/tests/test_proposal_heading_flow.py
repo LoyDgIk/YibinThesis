@@ -234,6 +234,15 @@ class ProposalHeadingFlowTests(unittest.TestCase):
             ["选题意义", "国内外研究现状概述", "主要研究内容", "拟采用的研究思路",
              "研究工作安排及进度", "参考文献目录", "指导教师意见"],
         )
+        approach_height = form.rows[3]._tr.trPr.find(qn("w:trHeight"))
+        self.assertIsNone(
+            approach_height,
+            "The long research-approach cell must use its content height, not a fixed minimum.",
+        )
+        self.assertNotIn("主要描述研究方法、技术路线、可行性论证等。", form.rows[3].cells[1].text)
+        self.assertNotIn("进度（应与二级学部（院）的进度大体一致）", form.rows[4].cells[1].text)
+        self.assertNotIn("国内、国外研究现状应分开概述；概述时语言简练、重点突出。", form.rows[1].cells[1].text)
+        self.assertNotIn("规范表述。", form.rows[5].cells[1].text)
         heading_styles = (
             WORD.STYLE_HEADING_1, WORD.STYLE_HEADING_2,
             WORD.STYLE_HEADING_3, WORD.STYLE_HEADING_4,

@@ -611,26 +611,26 @@ def parse_main_events(main_text: str) -> list[MainEvent]:
 
 
 def parse_discipline(main_text: str) -> str:
-    match = re.search(
-        r"\\documentclass(?:\[(?P<options>[^]]*)\])?\s*\{yibinthesis\}",
-        strip_tex_comments(main_text),
-    )
-    if not match:
-        return "humanities"
-    options = {item.strip().lower() for item in (match.group("options") or "").split(",")}
+    options = parse_document_class_options(main_text)
     return "science" if "science" in options else "humanities"
 
 
-def parse_document_type(main_text: str) -> str:
+def parse_document_class_options(main_text: str) -> set[str]:
     match = re.search(
         r"\\documentclass(?:\[(?P<options>[^]]*)\])?\s*\{yibinthesis\}",
         strip_tex_comments(main_text),
     )
     if not match:
-        return "thesis"
-    options = {
-        item.strip().lower() for item in (match.group("options") or "").split(",")
+        return set()
+    return {
+        item.strip().lower()
+        for item in (match.group("options") or "").split(",")
+        if item.strip()
     }
+
+
+def parse_document_type(main_text: str) -> str:
+    options = parse_document_class_options(main_text)
     selected = options & {"thesis", "proposal", "literature-review"}
     if len(selected) > 1:
         raise BuildError("文档类型类选项互斥：" + "、".join(sorted(selected)))
@@ -1783,6 +1783,8 @@ def prepare_bibliography(
     pandoc: Path,
     cwd: Path,
     temp_dir: Path,
+    include_url: bool = True,
+    include_doi: bool = True,
 ) -> Path:
     """Preserve BibLaTeX inline formatting and restore @standard for citeproc.
 
@@ -1791,7 +1793,42 @@ def prepare_bibliography(
     semantics are unambiguous here, so restore only those entries to the CSL
     ``standard`` type before citeproc runs.
     """
-    if bibliography.suffix.lower() not in {".bib", ".biblatex"}:
+    suffix = bibliography.suffix.lower()
+    if suffix == ".json" and not (include_url and include_doi):
+        try:
+            source_items = json.loads(bibliography.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as error:
+            raise BuildError(f"Pandoc 无法解析参考文献 JSON：{error}") from error
+        if not isinstance(source_items, list):
+            return bibliography
+        suppressed_fields = set()
+        if not include_url:
+            suppressed_fields.update({"url", "urldate", "accessed"})
+        if not include_doi:
+            suppressed_fields.add("doi")
+        render_items = [
+            {
+                key: value
+                for key, value in item.items()
+                if key.casefold() not in suppressed_fields
+            }
+            if isinstance(item, dict)
+            else item
+            for item in source_items
+        ]
+        output = temp_dir / f"{bibliography.stem}.filtered.json"
+        output.write_text(
+            json.dumps(render_items, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        bibliography_source_items_path(output).write_text(
+            json.dumps(source_items, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        return output
+    if suffix not in {".bib", ".biblatex"}:
         return bibliography
     result = run_checked(
         [str(pandoc), "--from=biblatex", "--to=json", str(bibliography)],
@@ -1818,6 +1855,15 @@ def prepare_bibliography(
     # The bibliography reader adds nocite=* when it is used as a document
     # reader.  Only the manuscript's citations should select the final entries.
     metadata.pop("nocite", None)
+    source_ast_document = copy.deepcopy(ast_document)
+    for entry in metadata.get("references", {}).get("c", []):
+        fields = entry["c"]
+        if not include_url:
+            fields.pop("url", None)
+            fields.pop("urldate", None)
+            fields.pop("accessed", None)
+        if not include_doi:
+            fields.pop("doi", None)
     ast_path = temp_dir / "references.pandoc.json"
     ast_path.write_text(
         json.dumps(ast_document, ensure_ascii=False, indent=2) + "\n",
@@ -1832,12 +1878,32 @@ def prepare_bibliography(
         str(pandoc), "--from=json", "--to=markdown", "--standalone", "--wrap=none",
         f"--output={output}", str(ast_path),
     ], cwd=cwd)
-    # Keep CSL records for Word's native citation source data as well.
+    # Keep full CSL records for Word's native citation source data.
+    source_items_path = bibliography_source_items_path(output)
     run_checked([
         str(pandoc), "--from=json", "--to=csljson",
         f"--output={output.with_suffix('.json')}", str(ast_path),
     ], cwd=cwd)
+    if include_url and include_doi:
+        shutil.copyfile(output.with_suffix(".json"), source_items_path)
+    else:
+        source_ast_path = temp_dir / "references.sources.pandoc.json"
+        source_ast_path.write_text(
+            json.dumps(source_ast_document, ensure_ascii=False, indent=2) + "\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        run_checked([
+            str(pandoc), "--from=json", "--to=csljson",
+            f"--output={source_items_path}", str(source_ast_path),
+        ], cwd=cwd)
     return output
+
+
+def bibliography_source_items_path(bibliography: Path) -> Path:
+    """Return the sidecar containing unfiltered CSL data for native Word sources."""
+
+    return bibliography.with_name(f"{bibliography.stem}.sources.json")
 
 
 def _localize_bibliography_terms(document, citations, bibliography_items) -> None:
@@ -3199,16 +3265,24 @@ def build(args: argparse.Namespace) -> Path:
         resource_paths = os.pathsep.join(
             str(path) for path in resource_candidates
         )
+        class_options = parse_document_class_options(main_text)
         citeproc_bibliography = prepare_bibliography(
             bibliography,
             pandoc=pandoc,
             cwd=main_dir,
             temp_dir=temp_dir,
+            include_url="no-url" not in class_options,
+            include_doi="no-doi" not in class_options,
         )
         bibliography_items: list[dict[str, object]] = []
         bibliography_json = citeproc_bibliography.with_suffix(".json") if citeproc_bibliography != bibliography else citeproc_bibliography
         if bibliography_json.suffix.lower() == ".json":
             parsed_items = json.loads(bibliography_json.read_text(encoding="utf-8"))
+            if isinstance(parsed_items, list):
+                bibliography_items = [item for item in parsed_items if isinstance(item, dict)]
+        source_items_path = bibliography_source_items_path(citeproc_bibliography)
+        if source_items_path.is_file():
+            parsed_items = json.loads(source_items_path.read_text(encoding="utf-8"))
             if isinstance(parsed_items, list):
                 bibliography_items = [item for item in parsed_items if isinstance(item, dict)]
         command = [

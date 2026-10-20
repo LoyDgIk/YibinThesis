@@ -6,12 +6,12 @@
 
 `main.tex` 装配文档，`metadata.tex` 填元数据，`chapters/` 保存内容，`references.bib` 保存来源。这些是用户稿件内的相对位置，不要求预先存在；接续稿件时沿用其实际目录，新建稿件时再按需要创建。
 
-文种选项为 `thesis`、`literature-review`、`proposal`；学科选项为 `humanities` 或 `science`。选择与任务一致的文种，不把正式论文的结构直接套到综述或开题报告。
+文种选项为 `thesis`、`literature-review`、`proposal`；学科选项为 `humanities` 或 `science`。选择与任务一致的文种，不把正式论文的结构直接套到综述或开题报告。`new` 创建的三类项目默认带有 `no-doi`，参考文献列表隐藏 DOI、保留 URL；需要显示 DOI 时删除该选项。若学部要求不著录 URL，可另外加入 `no-url`。两项互不影响且对 PDF、Word 输出均生效，不会删除 Bib 数据；接续既有稿件时保留用户选择。
 
 ### 正式论文入口
 
 ```tex
-\documentclass[thesis,humanities]{yibinthesis}
+\documentclass[thesis,humanities,no-doi]{yibinthesis}
 \input{metadata}
 \addbibresource{references.bib}
 \begin{document}
@@ -32,7 +32,7 @@
 ### 文献综述入口
 
 ```tex
-\documentclass[literature-review,humanities]{yibinthesis}
+\documentclass[literature-review,humanities,no-doi]{yibinthesis}
 \input{metadata}
 \addbibresource{references.bib}
 \begin{document}
@@ -49,7 +49,7 @@
 ### 开题报告入口
 
 ```tex
-\documentclass[proposal,humanities]{yibinthesis}
+\documentclass[proposal,humanities,no-doi]{yibinthesis}
 \input{metadata}
 \addbibresource{references.bib}
 \begin{document}

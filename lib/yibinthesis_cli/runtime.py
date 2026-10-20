@@ -7,7 +7,7 @@ from pathlib import Path
 import sys
 
 
-CLI_VERSION = "0.3.0"
+CLI_VERSION = "0.3.6"
 PROJECT_CONFIG_NAME = "yibinthesis.project.json"
 GENERATED_MARKER_NAME = ".yibinthesis-cli.json"
 

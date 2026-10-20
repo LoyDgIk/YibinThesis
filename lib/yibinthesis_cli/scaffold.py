@@ -93,7 +93,7 @@ def metadata_tex(args, document_type: str) -> str:
 def _main_tex(document_type: str, discipline: str) -> str:
     if document_type == "proposal":
         return rf"""% !TeX program = xelatex
-\documentclass[proposal,{discipline}]{{yibinthesis}}
+\documentclass[proposal,{discipline},no-doi]{{yibinthesis}}
 \input{{metadata}}
 \addbibresource{{references.bib}}
 \begin{{document}}
@@ -104,20 +104,30 @@ def _main_tex(document_type: str, discipline: str) -> str:
 }}
 \yibinproposalfield{{research-status}}{{
   \section{{国内外研究进展}}
+  % 国内、国外研究现状应分开概述；概述时语言简练、重点突出。
   请填写国内外研究现状概述。
   \subsection{{已有研究评述}}
   请结合文献概括已有研究的贡献与局限。
 }}
 \yibinproposalfield{{research-content}}{{请填写主要研究内容。}}
-\yibinproposalfield{{research-approach}}{{请填写研究思路、方法、技术路线与可行性论证。}}
-\yibinproposalfield{{schedule}}{{请填写研究工作安排及进度。}}
-\yibinproposalfield{{references}}{{\printyibinproposalbibliography}}
+\yibinproposalfield{{research-approach}}{{
+  % 主要描述研究方法、技术路线、可行性论证等。
+  请填写研究思路、方法、技术路线与可行性论证。
+}}
+\yibinproposalfield{{schedule}}{{
+  % 进度应与二级学部（院）的进度大体一致。
+  请填写研究工作安排及进度。
+}}
+\yibinproposalfield{{references}}{{
+  % 根据《信息与文献—参考文献著录规则》（GB/T 7714-2015），规范表述。
+  \printyibinproposalbibliography
+}}
 \yibinproposalfield{{advisor-opinion}}{{}}
 \end{{document}}
 """
     if document_type == "literature-review":
         return rf"""% !TeX program = xelatex
-\documentclass[literature-review,{discipline}]{{yibinthesis}}
+\documentclass[literature-review,{discipline},no-doi]{{yibinthesis}}
 \input{{metadata}}
 \addbibresource{{references.bib}}
 \begin{{document}}
@@ -129,7 +139,7 @@ def _main_tex(document_type: str, discipline: str) -> str:
 \end{{document}}
 """
     return rf"""% !TeX program = xelatex
-\documentclass[thesis,{discipline}]{{yibinthesis}}
+\documentclass[thesis,{discipline},no-doi]{{yibinthesis}}
 \input{{metadata}}
 \addbibresource{{references.bib}}
 \begin{{document}}

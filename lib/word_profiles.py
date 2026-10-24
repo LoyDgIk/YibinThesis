@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import sys
+import unicodedata
+
+from docx.enum.text import WD_LINE_SPACING
 
 
 def bind_core(core):
@@ -53,6 +56,38 @@ def _set_form_cell_margins(cell, *, top: int = 90, left: int = 110, bottom: int 
             margins.append(node)
         node.set(qn("w:w"), str(value))
         node.set(qn("w:type"), "dxa")
+
+
+def _wrap_proposal_title(text: str, width_cm: float, font_pt: float = 14) -> list[str]:
+    """Split a long cover title into underlined, full-width Word paragraphs."""
+    max_width = Cm(width_cm).pt - 4.5
+    lines: list[str] = []
+    line: list[str] = []
+    line_width = 0.0
+    for char in text.strip():
+        char_width = font_pt if unicodedata.east_asian_width(char) in {"F", "W"} else font_pt / 2
+        if line and line_width + char_width > max_width:
+            lines.append("".join(line).rstrip())
+            line = []
+            line_width = 0.0
+        line.append(char)
+        line_width += char_width
+    if line:
+        lines.append("".join(line).rstrip())
+    return lines or [""]
+
+
+def _set_paragraph_between_border(paragraph) -> None:
+    """Keep a rule between adjacent wrapped proposal-title paragraphs."""
+    borders = paragraph._p.get_or_add_pPr().find(qn("w:pBdr"))
+    between = borders.find(qn("w:between"))
+    if between is None:
+        between = OxmlElement("w:between")
+        borders.append(between)
+    between.set(qn("w:val"), "single")
+    between.set(qn("w:sz"), "8")
+    between.set(qn("w:space"), "0")
+    between.set(qn("w:color"), "000000")
 
 
 def _move_nodes_to_cell(cell, nodes: list[object], document: Document) -> None:
@@ -123,107 +158,138 @@ def _insert_proposal_cover(
     main_dir: Path,
     metadata_dir: Path,
 ) -> None:
-    """Insert the proposal cover as the sample's native paragraph layout.
+    """Insert the 2024 opening-report cover and its information rows."""
 
-    The 2022 work-sheet cover is not a collection of layout tables.  It is a
-    sequence of centred paragraphs followed by five tabbed, underlined field
-    paragraphs.  Keeping that structure is important: Word lays out the
-    underlined slots and long titles differently when they are put in tables.
-    """
+    assets = project_root / "assets"
+    wordmark = assets / "yibin-university-wordmark.png"
+    seal = assets / "yibin-university-seal.png"
+    if not wordmark.is_file():
+        try:
+            wordmark = _resolve_cover_logo(
+                metadata,
+                project_root,
+                main_dir,
+                metadata_dir,
+                allow_project_fallback=True,
+            )
+        except BuildError:
+            # Unit fixtures and external profile callers may omit optional art.
+            wordmark = None
 
-    try:
-        logo = _resolve_cover_logo(
-            metadata,
-            project_root,
-            main_dir,
-            metadata_dir,
-            allow_project_fallback=True,
-        )
-    except BuildError:
-        # Unit fixtures and external profile callers may intentionally omit
-        # the optional logo; keep the textual cover usable in that case.
-        logo = None
     logo_paragraph = document.add_paragraph()
     logo_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    logo_paragraph.paragraph_format.space_before = Pt(0)
-    logo_paragraph.paragraph_format.space_after = Pt(12)
-    logo_paragraph.paragraph_format.line_spacing = 1.0
-    if logo is not None:
-        logo_paragraph.add_run().add_picture(str(logo), width=Cm(13.15), height=Cm(3.65))
+    logo_paragraph.paragraph_format.space_before = Pt(7)
+    logo_paragraph.paragraph_format.space_after = Pt(55.5)
+    logo_paragraph.paragraph_format.line_spacing = Pt(66)
+    logo_paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.AT_LEAST
+    if wordmark is not None:
+        logo_paragraph.add_run().add_picture(
+            str(wordmark), width=Cm(6.24), height=Cm(2.33)
+        )
     else:
         run = logo_paragraph.add_run("宜宾学院")
-        _set_run_fonts(run, "SimHei", "Times New Roman", 26, bold=True)
+        _set_run_fonts(run, "SimHei", "SimHei", 22, bold=True)
 
-    document.add_paragraph().paragraph_format.line_spacing = 1.0
     title = document.add_paragraph()
     title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    title.paragraph_format.line_spacing = 2.0
-    title.paragraph_format.space_after = Pt(12)
-    _set_run_fonts(title.add_run("本科生毕业论文"), "SimHei", "SimHei", 28, bold=True)
+    title.paragraph_format.line_spacing = Pt(38)
+    title.paragraph_format.space_before = Pt(0)
+    title.paragraph_format.space_after = Pt(26.5)
+    _set_run_fonts(title.add_run("本科生毕业论文开题报告"), "SimHei", "SimHei", 32, bold=True)
 
-    document.add_paragraph().paragraph_format.line_spacing = 1.0
-    paper_title = document.add_paragraph()
-    paper_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    paper_title.paragraph_format.space_after = Pt(0)
-    paper_title.paragraph_format.line_spacing = 2.0
-    title_run = paper_title.add_run(metadata.get("title", "（填写中文题目）"))
-    _set_run_fonts(title_run, "SimSun", "Times New Roman", 18, bold=False, underline=False)
+    seal_paragraph = document.add_paragraph()
+    seal_paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    seal_paragraph.paragraph_format.space_before = Pt(0)
+    seal_paragraph.paragraph_format.space_after = Pt(60)
+    seal_paragraph.paragraph_format.line_spacing = Pt(115.5)
+    seal_paragraph.paragraph_format.line_spacing_rule = WD_LINE_SPACING.AT_LEAST
+    if seal.is_file():
+        seal_paragraph.add_run().add_picture(
+            str(seal), width=Cm(4.07), height=Cm(4.07)
+        )
 
-    proposal_type = document.add_paragraph()
-    proposal_type.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    proposal_type.paragraph_format.line_spacing = 2.0
-    proposal_type.paragraph_format.space_before = Pt(0)
-    proposal_type.paragraph_format.space_after = Pt(24)
-    _set_run_fonts(proposal_type.add_run("开题报告"), "SimHei", "SimHei", 18, bold=True)
+    fields_gap = document.add_paragraph()
+    fields_gap.paragraph_format.space_before = Pt(0)
+    fields_gap.paragraph_format.space_after = Pt(0)
+    fields_gap.paragraph_format.line_spacing = Pt(1)
 
-    # Centre the whole heading block on the widest information row (8743
-    # twips), without inheriting Normal's two-character first-line indent.
-    for paragraph in (logo_paragraph, title, paper_title, proposal_type):
+    cover_footer = document.add_paragraph()
+    cover_footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
+    cover_footer.paragraph_format.space_before = Pt(34)
+    cover_footer.paragraph_format.space_after = Pt(0)
+    cover_footer.paragraph_format.line_spacing = Pt(18)
+    _set_run_fonts(cover_footer.add_run("教务处制表"), "SimSun", "SimSun", 14)
+
+    cover_rows = (
+        (["label", "题  目", 2.61], ["value", metadata.get("title", ""), 10.75]),
+        (["label", "学院（部）", 2.75], ["value", metadata.get("college", ""), 8.15]),
+        (["label", "专  业", 2.75], ["value", metadata.get("major", ""), 8.15]),
+        (["label", "学生姓名", 2.75], ["value", metadata.get("author", ""), 8.15]),
+        (
+            ["label", "学  号", 2.75], ["value", metadata.get("student-id", ""), 4.55],
+            ["label", "年级", 1.2], ["value", format_grade_class(metadata), 2.4],
+        ),
+        (
+            ["label", "指导教师（校内）", 4.7], ["value", metadata.get("advisor", ""), 2.45],
+            ["label", "职称", 1.15], ["value", metadata.get("advisor-title", ""), 2.6],
+        ),
+        (
+            ["label", "指导教师（校外）", 4.7],
+            ["value", metadata.get("external-advisor", ""), 2.45],
+            ["label", "职称", 1.15],
+            ["value", metadata.get("external-advisor-title", ""), 2.6],
+        ),
+    )
+    for row_index, cells in enumerate(cover_rows):
+        title_lines = (
+            _wrap_proposal_title(cells[1][1], cells[1][2]) if row_index == 0 else []
+        )
+        table = _insert_cover_table(
+            document,
+            cover_footer,
+            [(kind, value, width) for kind, value, width in cells],
+            row_height_pt=max(48, 24 * len(title_lines)) if row_index == 0 else 36,
+        )
+        table.alignment = (
+            WD_TABLE_ALIGNMENT.RIGHT if row_index == 0 else WD_TABLE_ALIGNMENT.CENTER
+        )
+        if row_index == 0:
+            table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
+        for cell, (kind, _, _) in zip(table.rows[0].cells, cells):
+            if row_index == 0 and kind == "value":
+                paragraph = cell.paragraphs[0]
+                paragraph.text = title_lines[0] or "\u200b"
+                lines = [paragraph]
+                for line in title_lines[1:]:
+                    continuation = cell.add_paragraph(style="CoverValueLine")
+                    continuation.add_run(line)
+                    lines.append(continuation)
+                for line_index, title_paragraph in enumerate(lines):
+                    title_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+                    title_paragraph.paragraph_format.space_before = Pt(0)
+                    title_paragraph.paragraph_format.space_after = Pt(0)
+                    title_paragraph.paragraph_format.line_spacing = Pt(24)
+                    title_paragraph.paragraph_format.keep_together = True
+                    _set_paragraph_bottom_border(title_paragraph)
+                    _set_paragraph_between_border(title_paragraph)
+                    run = title_paragraph.runs[0]
+                    if line_index == 0:
+                        run.style = "CoverValue"
+                    _set_run_fonts(
+                        run, "SimSun", "Times New Roman", 14, bold=False, underline=False
+                    )
+                continue
+            for run in cell.paragraphs[0].runs:
+                if kind == "label":
+                    _set_run_fonts(run, "SimSun", "SimSun", 14, bold=True, underline=False)
+                else:
+                    _set_run_fonts(run, "SimSun", "Times New Roman", 14, bold=False, underline=False)
+
+    # Keep every cover block free of inherited first-line indents.
+    for paragraph in (logo_paragraph, title, seal_paragraph, fields_gap, cover_footer):
         indent = paragraph._p.get_or_add_pPr().get_or_add_ind()
         for attribute in ("left", "leftChars", "firstLine", "firstLineChars"):
             indent.set(qn(f"w:{attribute}"), "0")
-        indent.set(qn("w:right"), "45")
-
-    date = document.add_paragraph()
-    date.alignment = WD_ALIGN_PARAGRAPH.CENTER
-    date.paragraph_format.space_before = Pt(132)
-    date.paragraph_format.line_spacing = 1.0
-    _set_run_fonts(date.add_run(metadata.get("date", "")), "SimSun", "Times New Roman", 15, bold=True)
-
-    _insert_cover_table(
-        document, date,
-        [("label", "学部（院）", 3.4925), ("value", metadata.get("college", ""), 11.6121)],
-        row_height_pt=34.0,
-    )
-    _insert_cover_table(
-        document, date,
-        [("label", "专    业", 3.4925), ("value", metadata.get("major", ""), 11.9296)],
-        row_height_pt=34.0,
-    )
-    _insert_cover_table(
-        document, date,
-        [("label", "学生姓名", 3.1750), ("value", metadata.get("author", ""), 11.9296)],
-        row_height_pt=34.0,
-    )
-    _insert_cover_table(
-        document, date,
-        [
-            ("label", "学    号", 3.1750),
-            ("value", metadata.get("student-id", ""), 5.6686),
-            ("label", "年级", 1.5875),
-            ("value", format_grade_class(metadata), 4.5367),
-        ],
-        row_height_pt=34.0,
-    )
-    advisor = metadata.get("advisor", "")
-    advisor_title = metadata.get("advisor-title", "")
-    advisor_cells = [
-        ("label", "指导教师", 3.1750),
-        ("value", advisor, 5.6686),
-        ("label", "职称", 1.5875),
-        ("value", advisor_title, 4.5367),
-    ]
-    _insert_cover_table(document, date, advisor_cells, row_height_pt=34.0)
 
 
 def _append_proposal_table(
@@ -254,13 +320,16 @@ def _append_proposal_table(
     }
     # The long research-approach field uses its content height to avoid a blank page tail.
     table = document.add_table(rows=len(fields), cols=2)
-    table.alignment = WD_TABLE_ALIGNMENT.CENTER
+    table.alignment = WD_TABLE_ALIGNMENT.LEFT
     table.autofit = False
     _set_fixed_table_geometry(
         table,
         (1.52, 14.23),
         style_name=STYLE_PROPOSAL_FORM_TABLE,
     )
+    table_indent = table._tbl.tblPr.find(qn("w:tblInd"))
+    table_indent.set(qn("w:type"), "dxa")
+    table_indent.set(qn("w:w"), "249")
     _set_form_table_borders(table)
     for row_index, key in enumerate(fields):
         row = table.rows[row_index]
@@ -389,12 +458,12 @@ def _postprocess_proposal_docx(
     cover.start_type = WD_SECTION_START.NEW_PAGE
     cover.page_width = Cm(21)
     cover.page_height = Cm(29.7)
-    cover.top_margin = Pt(45)
-    cover.bottom_margin = Pt(45)
-    cover.left_margin = Cm(3.0)
-    cover.right_margin = Cm(2.5)
-    cover.header_distance = Cm(1.5)
-    cover.footer_distance = Cm(1.5)
+    cover.top_margin = Pt(70.9)
+    cover.bottom_margin = Pt(51.05)
+    cover.left_margin = Pt(85.05)
+    cover.right_margin = Pt(62.35)
+    cover.header_distance = Pt(36.85)
+    cover.footer_distance = Pt(34)
     cover.header.is_linked_to_previous = False
     cover.footer.is_linked_to_previous = False
     _clear_story(cover.header)
@@ -402,12 +471,12 @@ def _postprocess_proposal_docx(
     _set_page_number_format(cover, None)
     section.page_width = Cm(21)
     section.page_height = Cm(29.7)
-    section.top_margin = Pt(72)
-    section.bottom_margin = Pt(72)
-    section.left_margin = Pt(90)
-    section.right_margin = Pt(90)
-    section.header_distance = Pt(42.55)
-    section.footer_distance = Pt(49.6)
+    section.top_margin = Pt(70.9)
+    section.bottom_margin = Pt(51.05)
+    section.left_margin = Pt(85.05)
+    section.right_margin = Pt(62.35)
+    section.header_distance = Pt(36.85)
+    section.footer_distance = Pt(34)
     section.header.is_linked_to_previous = False
     _clear_story(section.header)
     _set_page_number_format(section, "decimal", 1)
@@ -416,7 +485,7 @@ def _postprocess_proposal_docx(
     document.core_properties.title = metadata.get("title", "")
     document.core_properties.author = metadata.get("author", "")
     document.core_properties.subject = "宜宾学院本科毕业论文（设计）开题报告"
-    document.core_properties.keywords = "YibinThesis;document-type=proposal;template-year=2022"
+    document.core_properties.keywords = "YibinThesis;document-type=proposal;template-year=2024"
     settings = document.settings.element
     update_fields = settings.find(qn("w:updateFields"))
     if update_fields is None:

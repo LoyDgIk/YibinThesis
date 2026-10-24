@@ -57,7 +57,7 @@ def project_config(root: Path, document_type: str) -> dict[str, object]:
 
 
 def metadata_tex(args, document_type: str) -> str:
-    year = "2022" if document_type == "proposal" else "2024"
+    year = "2024"
     review = document_type == "literature-review"
     second_advisor_key = "second-advisor" if review else "external-advisor"
     second_advisor_title_key = f"{second_advisor_key}-title"

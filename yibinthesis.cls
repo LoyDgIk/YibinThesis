@@ -231,10 +231,9 @@
 \tl_new:N \g_yibin_expected_template_year_tl
 \bool_new:N \g_yibin_confidential_bool
 
-% The opening report is the form extracted from the 2022 work-form.  Thesis
-% and literature-review documents use the 2024 thesis typography baseline.
+% All three document types currently follow 2024 school templates.
 \ifyibin@proposal
-  \tl_gset:Nn \g_yibin_expected_template_year_tl {2022}
+  \tl_gset:Nn \g_yibin_expected_template_year_tl {2024}
 \else
   \tl_gset:Nn \g_yibin_expected_template_year_tl {2024}
 \fi

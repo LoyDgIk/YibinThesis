@@ -144,6 +144,98 @@
   \endgroup
 }
 
+\newsavebox{\yibin@proposalcovervaluebox}
+
+\newcommand{\yibin@proposalcoverlabel}[2]{%
+  \makebox[#1][l]{\yibinsong\bfseries\fontsize{14bp}{18bp}\selectfont #2}%
+}
+
+\newcommand{\yibin@proposalcovervalue}[2]{%
+  \begingroup
+    \yibinsong\fontsize{14bp}{18bp}\selectfont
+    \sbox{\yibin@proposalcovervaluebox}{\strut #2\strut}%
+    \underline{\makebox[#1][c]{%
+      \ifdim\wd\yibin@proposalcovervaluebox>#1
+        \resizebox{\dimexpr#1-0.2cm\relax}{!}{\usebox{\yibin@proposalcovervaluebox}}%
+      \else
+        \usebox{\yibin@proposalcovervaluebox}%
+      \fi}}%
+  \endgroup
+}
+
+\newcommand{\yibin@proposalcoverlongvalue}[2]{%
+  \begin{minipage}[t]{#1}%
+    \yibinsong\fontsize{14bp}{24bp}\selectfont\raggedright
+    \yibinProposalCoverTitleLinesExpand{#2}%
+  \end{minipage}%
+}
+
+\ExplSyntaxOn
+\seq_new:N \l_yibin_proposal_title_lines_seq
+\tl_new:N \l_yibin_proposal_title_line_tl
+\dim_new:N \l_yibin_proposal_title_line_dim
+\dim_new:N \l_yibin_proposal_title_char_dim
+\box_new:N \l_yibin_proposal_title_char_box
+
+\cs_new_protected:Npn \yibinProposalCoverTitleLines #1
+  {
+    \seq_clear:N \l_yibin_proposal_title_lines_seq
+    \tl_clear:N \l_yibin_proposal_title_line_tl
+    \dim_zero:N \l_yibin_proposal_title_line_dim
+    \tl_map_inline:nn {#1}
+      {
+        \hbox_set:Nn \l_yibin_proposal_title_char_box {##1}
+        \dim_set:Nn \l_yibin_proposal_title_char_dim
+          {\box_wd:N \l_yibin_proposal_title_char_box}
+        \dim_compare:nNnT
+          {\l_yibin_proposal_title_line_dim + \l_yibin_proposal_title_char_dim}
+          > {\linewidth}
+          {
+            \tl_if_empty:NF \l_yibin_proposal_title_line_tl
+              {
+                \seq_put_right:NV \l_yibin_proposal_title_lines_seq
+                  \l_yibin_proposal_title_line_tl
+                \tl_clear:N \l_yibin_proposal_title_line_tl
+                \dim_zero:N \l_yibin_proposal_title_line_dim
+              }
+          }
+        \tl_put_right:Nn \l_yibin_proposal_title_line_tl {##1}
+        \dim_add:Nn \l_yibin_proposal_title_line_dim
+          {\l_yibin_proposal_title_char_dim}
+      }
+    \tl_if_empty:NF \l_yibin_proposal_title_line_tl
+      {\seq_put_right:NV \l_yibin_proposal_title_lines_seq
+        \l_yibin_proposal_title_line_tl}
+    \seq_map_inline:Nn \l_yibin_proposal_title_lines_seq
+      {
+        \noindent\hbox_to_wd:nn {\linewidth} {\strut ##1\hfil}\par
+        \vskip 1pt
+        \hrule height 0.45pt
+        \vskip 2pt
+      }
+  }
+\cs_new_protected:Npn \yibinProposalCoverTitleLinesExpand #1
+  {\exp_args:Ne \yibinProposalCoverTitleLines {#1}}
+\ExplSyntaxOff
+
+\newcommand{\yibin@proposalcoverfield}[4]{%
+  \noindent\yibin@proposalcoverlabel{#2}{#1}%
+  \yibin@proposalcovervalue{#3}{#4}%
+}
+
+\newcommand{\yibin@proposalcoverlongfield}[4]{%
+  \noindent\yibin@proposalcoverlabel{#2}{#1}%
+  \yibin@proposalcoverlongvalue{#3}{#4}%
+}
+
+\newcommand{\yibin@proposalcoverdualfield}[8]{%
+  \noindent
+  \yibin@proposalcoverlabel{#2}{#1}%
+  \yibin@proposalcovervalue{#3}{#4}%
+  \yibin@proposalcoverlabel{#6}{#5}%
+  \yibin@proposalcovervalue{#7}{#8}%
+}
+
 \newcommand{\yibin@proposal@field@significance}[1]{%
   \begin{yibin@proposalbox}{\shortstack{选\\题\\意\\义}}{165.15pt}{}
     \yibin@proposalbody{#1}
@@ -198,41 +290,52 @@
       {Use \string\documentclass[proposal,humanities]{yibinthesis}.}%
   \fi
   \clearpage
-  % The standalone opening report has a real cover page before the form.
-  % Keep the cover outside the form geometry and page counter; the form
-  % itself starts at page 1.
+  % The 2024 form has a standalone cover with a separate wordmark and seal.
+  % Keep it outside the form geometry and page counter.
   \thispagestyle{empty}%
   \begingroup
     \setlength{\parindent}{0pt}%
-    \yibinprofilelogo{2.606cm}
-    \begin{textblock*}{21cm}(0cm,7.064cm)
-      \centering\yibinhei\bfseries\fontsize{28bp}{34bp}\selectfont
-      本科生毕业论文
+    \begin{textblock*}{6.24cm}(7.38cm,2.70cm)
+      \IfFileExists{assets/yibin-university-wordmark.png}{%
+        \includegraphics[width=6.24cm,height=2.33cm]{assets/yibin-university-wordmark.png}%
+      }{\yibinprofilelogo{2.606cm}}%
     \end{textblock*}
-    \begin{textblock*}{15cm}(3cm,10.160cm)
-      \centering\yibin@covertitle
+    \begin{textblock*}{21cm}(0cm,6.98cm)
+      \centering\yibinhei\bfseries\fontsize{32bp}{38bp}\selectfont
+      本科生毕业论文开题报告
     \end{textblock*}
-    % Leave room for a two-line long title before the proposal type label.
-    \begin{textblock*}{15cm}(3cm,12.180cm)
-      \centering\yibinkai\bfseries\fontsize{16bp}{22bp}\selectfont
-      开题报告
+    \begin{textblock*}{4.07cm}(8.465cm,9.26cm)
+      \IfFileExists{assets/yibin-university-seal.png}{%
+        \includegraphics[width=4.07cm,height=4.07cm]{assets/yibin-university-seal.png}%
+      }{}%
     \end{textblock*}
-    \begin{textblock*}{15.5cm}(3cm,13.447cm)
-      \yibin@coverfield{学院（部）}{3.5cm}{11.6cm}{\yibincollege}
+
+    \begin{textblock*}{13.5cm}(5.05cm,15.71cm)
+      \yibin@proposalcoverlongfield{题\hspace{1em}目}{2.75cm}{10.75cm}{\yibintitle}
     \end{textblock*}
-    \begin{textblock*}{15.5cm}(3cm,15.109cm)
-      \yibin@coverfield{专\hspace{2em}业}{3.5cm}{11.6cm}{\yibinmajor}
+    \begin{textblock*}{10.9cm}(5.05cm,18.10cm)
+      \yibin@proposalcoverfield{学院（部）}{2.75cm}{8.15cm}{\yibincollege}
     \end{textblock*}
-    \begin{textblock*}{15.5cm}(3cm,16.733cm)
-      \yibin@coverfield{学生姓名}{3.2cm}{11.9cm}{\yibinauthor}
+    \begin{textblock*}{10.9cm}(5.05cm,19.37cm)
+      \yibin@proposalcoverfield{专\hspace{1em}业}{2.75cm}{8.15cm}{\yibinmajor}
     \end{textblock*}
-    \begin{textblock*}{15.5cm}(3cm,18.357cm)
-      \yibin@coverdualfield{学\hspace{2em}号}{3.2cm}{5.6cm}{\yibinstudentid}%
-        {年级}{1.6cm}{4.5cm}{\yibingradeclass}
+    \begin{textblock*}{10.9cm}(5.05cm,20.64cm)
+      \yibin@proposalcoverfield{学生姓名}{2.75cm}{8.15cm}{\yibinauthor}
     \end{textblock*}
-    \begin{textblock*}{15.5cm}(3cm,20.019cm)
-      \yibin@coverdualfield{指导教师}{3.2cm}{5.6cm}{\yibinadvisor}%
-        {职称}{1.55cm}{3.1cm}{\yibinadvisortitle}
+    \begin{textblock*}{10.9cm}(5.05cm,21.91cm)
+      \yibin@proposalcoverdualfield{学\hspace{1em}号}{2.75cm}{4.55cm}{\yibinstudentid}%
+        {年级}{1.2cm}{2.4cm}{\yibingradeclass}
+    \end{textblock*}
+    \begin{textblock*}{10.9cm}(5.05cm,23.18cm)
+      \yibin@proposalcoverdualfield{指导教师（校内）}{4.7cm}{2.45cm}{\yibinadvisor}%
+        {职称}{1.15cm}{2.6cm}{\yibinadvisortitle}
+    \end{textblock*}
+    \begin{textblock*}{10.9cm}(5.05cm,24.45cm)
+      \yibin@proposalcoverdualfield{指导教师（校外）}{4.7cm}{2.45cm}{\yibinexternaladvisor}%
+        {职称}{1.15cm}{2.6cm}{\yibinexternaladvisortitle}
+    \end{textblock*}
+    \begin{textblock*}{21cm}(0cm,26.1cm)
+      \centering\yibinsong\fontsize{14bp}{18bp}\selectfont 教务处制表
     \end{textblock*}
     \null
   \endgroup

@@ -423,6 +423,16 @@ function Initialize-TemplateRuntime {
     }
     New-Item -ItemType Directory -Path (Split-Path -Parent $logoTarget) -Force | Out-Null
     Copy-Item -LiteralPath $logoSource -Destination $logoTarget -Force
+    foreach ($proposalAsset in @(
+        'yibin-university-wordmark.png',
+        'yibin-university-seal.png'
+    )) {
+        $assetSource = Join-Path $ProjectRoot "assets\$proposalAsset"
+        if (-not (Test-Path -LiteralPath $assetSource -PathType Leaf)) {
+            throw "Proposal cover asset not found: $assetSource"
+        }
+        Copy-Item -LiteralPath $assetSource -Destination (Join-Path (Split-Path -Parent $logoTarget) $proposalAsset) -Force
+    }
 }
 
 function Copy-BibliographyResourcesToOutput {

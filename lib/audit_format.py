@@ -710,14 +710,11 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
     )
     cover_title = cover_titles[0] if len(cover_titles) == 1 else None
     cover_fields = named.get("coverfield", [])
-    # Six thesis rows carry nine fixed labels (学院（部）, 专业, 学生姓名, 学号,
-    # 年级, 指导教师（校内）, 职称, 指导教师（校外）, 职称).  The 2022 proposal
-    # cover has five rows with seven labels: it shares one adviser slot and one
-    # 职称 label.  Values live in sibling CoverValueLine paragraphs in both.
+    # Six thesis rows carry nine fixed labels; the 2024 proposal cover has ten.
     audit.equal(
         f"{prefix}.CoverField.count",
         len(cover_fields),
-        9 if is_thesis else (7 if is_proposal else 0),
+        9 if is_thesis else (10 if is_proposal else 0),
     )
     audit.true(
         f"{prefix}.CoverVersion.count must be optional and unique",
@@ -772,7 +769,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
             member in media_bytes,
         )
 
-    if blips and logo.is_file():
+    if blips and logo.is_file() and is_thesis:
         logo_embed = blips[0].get(R + "embed")
         relationship = rel_map.get(logo_embed or "")
         if relationship is not None:
@@ -804,30 +801,18 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
                 "36",
             )
 
-    # Label paragraphs in official row order.  The thesis shares 年级 and 职称
-    # across rows; the 2022 proposal shares only 职称.
-    if is_proposal:
-        expected_field_tokens = (
-            "学部（院）",
-            "专业",
-            "学生姓名",
-            "学号",
-            "年级",
-            "指导教师",
-            "职称",
+    # Label paragraphs remain ordered within each document cover.
+    expected_field_tokens = (
+        (
+            "题目", "学院（部）", "专业", "学生姓名", "学号", "年级",
+            "指导教师（校内）", "职称", "指导教师（校外）", "职称",
         )
-    else:
-        expected_field_tokens = (
-            "学院（部）",
-            "专业",
-            "学生姓名",
-            "学号",
-            "年级",
-            "指导教师（校内）",
-            "职称",
-            "指导教师（校外）",
-            "职称",
+        if is_proposal
+        else (
+            "学院（部）", "专业", "学生姓名", "学号", "年级",
+            "指导教师（校内）", "职称", "指导教师（校外）", "职称",
         )
+    )
     for index, (paragraph, token) in enumerate(
         zip(cover_fields, expected_field_tokens, strict=False),
         start=1,
@@ -849,23 +834,22 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
             cover_layout_tables.append(table)
     if is_thesis:
         expected_cover_geometry = (
-            ([1980, 6583], "926"),
-            ([1980, 6763], "925"),
-            ([1800, 6763], "952"),
-            ([1800, 3214, 900, 2572], "925"),
-            ([2880, 2906, 874, 1774], "926"),
-            ([2880, 2906, 874, 1774], "926"),
+            ([1980, 6583], "926", "exact"),
+            ([1980, 6763], "925", "exact"),
+            ([1800, 6763], "952", "exact"),
+            ([1800, 3214, 900, 2572], "925", "exact"),
+            ([2880, 2906, 874, 1774], "926", "exact"),
+            ([2880, 2906, 874, 1774], "926", "exact"),
         )
     elif is_proposal:
-        # The 2022 work-sheet cover reuses the thesis row widths for its five
-        # rows, keeps a uniform 34 pt exact row height, and merges the two
-        # adviser rows into one shared 指导教师/职称 row.
         expected_cover_geometry = (
-            ([1980, 6583], "680"),
-            ([1980, 6763], "680"),
-            ([1800, 6763], "680"),
-            ([1800, 3214, 900, 2572], "680"),
-            ([1800, 3214, 900, 2572], "680"),
+            ([1480, 6094], "960", "atLeast"),
+            ([1559, 4620], "720", "exact"),
+            ([1559, 4620], "720", "exact"),
+            ([1559, 4620], "720", "exact"),
+            ([1559, 2580, 680, 1361], "720", "exact"),
+            ([2665, 1389, 652, 1474], "720", "exact"),
+            ([2665, 1389, 652, 1474], "720", "exact"),
         )
     else:
         expected_cover_geometry = ()
@@ -874,7 +858,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
         len(cover_layout_tables),
         len(expected_cover_geometry),
     )
-    for index, (table, (expected_grid, expected_height)) in enumerate(
+    for index, (table, (expected_grid, expected_height, expected_height_rule)) in enumerate(
         zip(cover_layout_tables, expected_cover_geometry, strict=False),
         start=1,
     ):
@@ -893,15 +877,26 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
             attr(row_height, "val"),
             expected_height,
         )
-        audit.equal(
-            f"{prefix}.cover.geometry-table[{index}].height-rule",
-            attr(row_height, "hRule"),
-            "exact",
-        )
+        if expected_height_rule == "atLeast":
+            audit.true(
+                f"{prefix}.cover.geometry-table[{index}].height-rule must be atLeast",
+                attr(row_height, "hRule") in {None, "atLeast"},
+            )
+        else:
+            audit.equal(
+                f"{prefix}.cover.geometry-table[{index}].height-rule",
+                attr(row_height, "hRule"),
+                expected_height_rule,
+            )
         alignment = attr(table.find(f"{W}tblPr/{W}jc"), "val")
         audit.true(
-            f"{prefix}.cover.geometry-table[{index}] must be left aligned",
-            alignment in {None, "left", "start"},
+            f"{prefix}.cover.geometry-table[{index}] has invalid alignment",
+            alignment
+            in (
+                {"right"} if is_proposal and index == 1
+                else {"center"} if is_proposal
+                else {None, "left", "start"}
+            ),
         )
 
     # There are nine independently fillable slots on the six official cover
@@ -944,7 +939,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
             audit.equal(
                 f"{prefix}.cover.value-slot[{slot_index}].alignment",
                 attr(alignment, "val"),
-                "center",
+                "left" if is_proposal and slot_index == 1 else "center",
             )
             underscore_leaders = [
                 tab
@@ -982,12 +977,12 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
     audit.equal(
         f"{prefix}.cover.value-cell.unique-count",
         len(value_cells),
-        9 if is_thesis else (7 if is_proposal else 0),
+        9 if is_thesis else (10 if is_proposal else 0),
     )
     audit.equal(
         f"{prefix}.cover.layout-table.count",
         len(value_tables),
-        6 if is_thesis else (5 if is_proposal else 0),
+        6 if is_thesis else (7 if is_proposal else 0),
     )
 
     declaration_title = next(

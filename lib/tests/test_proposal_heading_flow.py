@@ -89,7 +89,7 @@ def write_fixture(project: Path, discipline: str) -> Path:
     fields.mkdir(parents=True, exist_ok=True)
     (project / "metadata.tex").write_text(
         r"""\yibinsetup{
-  template-year = 2022,
+  template-year = 2024,
   title = {开题标题层级测试},
   author = {测试作者},
   student-id = {20260001},

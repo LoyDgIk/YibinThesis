@@ -1,7 +1,7 @@
 # 开题报告示例
 
-该示例使用 `proposal` 类选项与 `template-year = 2022`，严格复刻 2022 年工作表
-物理第 5 至 7 页的开题报告模块，不套用 2024 毕业论文封面或前置页。
+该示例使用 `proposal` 类选项与 `template-year = 2024`，按新版开题报告封面和七个栏目生成。
+封面长题目按原字号换行，每一行分别保留横线；不包含毕业论文声明或文献综述前置页。
 
 入口按固定顺序填写七个字段：`significance`、`research-status`、
 `research-content`、`research-approach`、`schedule`、`references` 和

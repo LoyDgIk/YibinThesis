@@ -9,6 +9,7 @@ import zipfile
 from pathlib import Path
 
 from docx import Document
+from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -50,7 +51,7 @@ class DocumentProfileParsingTests(unittest.TestCase):
                 r"\documentclass[humanities,proposal]{yibinthesis}",
                 "proposal",
                 "humanities",
-                "2022",
+                "2024",
             ),
             (
                 r"\documentclass[literature-review,science]{yibinthesis}",
@@ -84,7 +85,7 @@ class DocumentProfileParsingTests(unittest.TestCase):
     def test_template_year_is_bound_to_document_type(self) -> None:
         cases = (
             (r"\documentclass{yibinthesis}", "2024"),
-            (r"\documentclass[proposal]{yibinthesis}", "2022"),
+            (r"\documentclass[proposal]{yibinthesis}", "2024"),
             (r"\documentclass[literature-review]{yibinthesis}", "2024"),
         )
         for main, expected in cases:
@@ -102,7 +103,7 @@ class DocumentProfileParsingTests(unittest.TestCase):
     def test_mismatched_template_year_is_rejected(self) -> None:
         cases = (
             (r"\documentclass{yibinthesis}", "2022", "thesis", "2024"),
-            (r"\documentclass[proposal]{yibinthesis}", "2024", "proposal", "2022"),
+            (r"\documentclass[proposal]{yibinthesis}", "2022", "proposal", "2024"),
             (
                 r"\documentclass[literature-review]{yibinthesis}",
                 "2022",
@@ -394,7 +395,7 @@ class WordProfileStructureTests(unittest.TestCase):
         self.assertEqual(date.size.pt, 15)
         self.assertTrue(date.bold)
 
-    def test_proposal_has_cover_and_form_sections_starting_at_page_four(self) -> None:
+    def test_proposal_has_2024_cover_and_form_sections_starting_at_page_one(self) -> None:
         source = Document(self.reference_docx)
         source.paragraphs[0].text = ""
         for key in BUILD_WORD.PROPOSAL_FIELD_ORDER:
@@ -404,10 +405,15 @@ class WordProfileStructureTests(unittest.TestCase):
         input_docx = self.root / "proposal-input.docx"
         output_docx = self.root / "proposal-output.docx"
         source.save(input_docx)
+        long_proposal_title = "基于政策文本分析的低空经济领域标准需求识别与供需匹配研究"
         BUILD_WORD._postprocess_proposal_docx(
             input_docx,
             output_docx,
-            metadata={**self._metadata(), "template-year": "2022"},
+            metadata={
+                **self._metadata(),
+                "template-year": "2024",
+                "title": long_proposal_title,
+            },
             project_root=ROOT,
             main_dir=self.root,
             metadata_dir=self.root,
@@ -423,36 +429,94 @@ class WordProfileStructureTests(unittest.TestCase):
 
         document = Document(output_docx)
         self.assertIn("document-type=proposal", document.core_properties.keywords)
-        self.assertIn("template-year=2022", document.core_properties.keywords)
+        self.assertIn("template-year=2024", document.core_properties.keywords)
         self.assertEqual(len(document.sections), 2)
         self.assertIsNone(self._page_number_attributes(document.sections[0]))
         self.assertEqual(
             self._page_number_attributes(document.sections[1]),
             {"format": "decimal", "start": "1"},
         )
-        self.assertEqual([len(table.rows) for table in document.tables], [1, 1, 1, 1, 1, 7])
+        self.assertEqual([len(table.rows) for table in document.tables], [1, 1, 1, 1, 1, 1, 1, 7])
+        title_table = document.tables[0]
+        self.assertEqual(title_table.alignment, BUILD_WORD.WD_TABLE_ALIGNMENT.RIGHT)
+        self.assertEqual(
+            [int(grid.get(BUILD_WORD.qn("w:w"))) for grid in title_table._tbl.tblGrid],
+            [1480, 6094],
+        )
+        title_row_height = title_table.rows[0]._tr.trPr.find(BUILD_WORD.qn("w:trHeight"))
+        self.assertEqual(title_row_height.get(BUILD_WORD.qn("w:hRule")), "atLeast")
+        self.assertEqual(title_row_height.get(BUILD_WORD.qn("w:val")), "960")
+        title_paragraphs = title_table.cell(0, 1).paragraphs
+        self.assertEqual(len(title_paragraphs), 2)
+        self.assertEqual("".join(paragraph.text for paragraph in title_paragraphs), long_proposal_title)
+        for title_paragraph in title_paragraphs:
+            self.assertEqual(title_paragraph.alignment, WD_ALIGN_PARAGRAPH.LEFT)
+            self.assertEqual(title_paragraph.runs[0].font.size.pt, 14)
+            self.assertIsNotNone(
+                title_paragraph._p.find(
+                    BUILD_WORD.qn("w:pPr")
+                    + "/"
+                    + BUILD_WORD.qn("w:pBdr")
+                    + "/"
+                    + BUILD_WORD.qn("w:bottom")
+                )
+            )
+        for title_paragraph in title_paragraphs:
+            self.assertIsNotNone(
+                title_paragraph._p.find(
+                    BUILD_WORD.qn("w:pPr")
+                    + "/"
+                    + BUILD_WORD.qn("w:pBdr")
+                    + "/"
+                    + BUILD_WORD.qn("w:between")
+                )
+            )
+        form_table_indent = document.tables[-1]._tbl.tblPr.find(BUILD_WORD.qn("w:tblInd"))
+        self.assertIsNotNone(form_table_indent)
+        self.assertEqual(form_table_indent.get(BUILD_WORD.qn("w:w")), "249")
         self.assertEqual(
             [
                 "".join(row.cells[0].paragraphs[0].text.split())
-                for table in document.tables[:5]
+                for table in document.tables[:7]
                 for row in table.rows
             ],
             [
-                "学部（院）",
+                "题目",
+                "学院（部）",
                 "专业",
                 "学生姓名",
                 "学号",
-                "指导教师",
+                "指导教师（校内）",
+                "指导教师（校外）",
             ],
         )
         self.assertTrue(
             all(
                 row.cells[0].paragraphs[0].style.name
                 == "CoverField"
-                for table in document.tables[:5]
+                for table in document.tables[:7]
                 for row in table.rows
             )
         )
+        cover_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
+        self.assertIn("本科生毕业论文开题报告", cover_text)
+        self.assertIn("教务处制表", cover_text)
+        self.assertNotIn("2026年7月", cover_text)
+        self.assertEqual(len(document.inline_shapes), 2)
+        self.assertEqual(
+            document.paragraphs[0].paragraph_format.line_spacing_rule,
+            WD_LINE_SPACING.AT_LEAST,
+        )
+        self.assertEqual(
+            document.paragraphs[2].paragraph_format.line_spacing_rule,
+            WD_LINE_SPACING.AT_LEAST,
+        )
+        self.assertAlmostEqual(document.sections[0].left_margin.pt, 85.05, places=2)
+        self.assertAlmostEqual(document.sections[0].right_margin.pt, 62.35, places=2)
+        self.assertAlmostEqual(document.sections[1].top_margin.pt, 70.9, places=2)
+        self.assertAlmostEqual(document.sections[1].bottom_margin.pt, 51.05, places=2)
+        self.assertAlmostEqual(document.sections[1].left_margin.pt, 85.05, places=2)
+        self.assertAlmostEqual(document.sections[1].right_margin.pt, 62.35, places=2)
         page_breaks = [
             node
             for node in document.element.body.iter(BUILD_WORD.qn("w:br"))

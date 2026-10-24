@@ -1647,21 +1647,31 @@ class OptionalCoverAndDirectoryTests(unittest.TestCase):
         for token in ("@('年级')", "@('指导教师（校内）')", "@('指导教师（校外）')"):
             self.assertIn(token, source)
 
-    def test_generated_docx_audit_tracks_the_nine_label_cover_model(self) -> None:
+    def test_generated_docx_audit_tracks_the_2024_proposal_cover_model(self) -> None:
         source = (ROOT / "lib" / "audit_format.py").read_text(encoding="utf-8")
-        # Nine thesis labels across six layout tables; the 2022 proposal cover
-        # has seven labels across five.  The counts must stay separate.
+        # The thesis cover has nine labels across six tables; the 2024 proposal
+        # cover has ten labels across seven. Keep the two models distinct.
         self.assertIn(
-            "9 if is_thesis else (7 if is_proposal else 0)",
+            "9 if is_thesis else (10 if is_proposal else 0)",
             source,
         )
         self.assertIn(
-            "6 if is_thesis else (5 if is_proposal else 0)",
+            "6 if is_thesis else (7 if is_proposal else 0)",
             source,
         )
-        self.assertIn('"学部（院）"', source)
+        self.assertIn('"题目"', source)
+        # The 2024 proposal cover uses the same label set as the thesis cover
+        # (built by `_insert_proposal_cover`), so the audit expects 学院（部）
+        # and the 校内/校外 advisor pairs for both. 教学单位 is the wording on
+        # the continuing-education 2025 template, not this one.
+        self.assertIn('"学院（部）"', source)
         self.assertIn('"指导教师（校内）"', source)
         self.assertIn('"指导教师（校外）"', source)
+        # 学部（院）belongs only to the literature-review cover
+        # (`_insert_review_cover` in word_profiles.py), which the generated-DOCX
+        # audit does not model; it must therefore not appear as a proposal token.
+        cover_tokens = source[source.index("expected_field_tokens = (") : source.index("for index, (paragraph, token)")]
+        self.assertNotIn("学部（院）", cover_tokens)
 
     def test_generated_docx_audit_uses_the_review_heading_styles(self) -> None:
         source = (ROOT / "lib" / "audit_format.py").read_text(encoding="utf-8")

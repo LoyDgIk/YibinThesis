@@ -108,7 +108,7 @@ yibinthesis new ..\论文项目\我的论文 `
 生成目录包含 `latex/main.tex`、`latex/metadata.tex`、`latex/references.bib`、
 `latex/chapters/`、`latex/assets/`、`build/` 和 `yibinthesis.project.json`。`proposal` 和
 `literature-review` 会生成对应的专用入口和字段；`template-year` 由文档类型固定为
-2022 或 2024，不能由调用者随意混用。`--dry-run` 只显示将要创建的文件，`--force`
+2024，不能由调用者随意混用。`--dry-run` 只显示将要创建的文件，`--force`
 仅允许覆盖脚手架已生成的文件，不会删除目标目录中的其他内容。
 
 工具仓库自身拒绝作为 `new` 的目标目录，也没有根 `main.tex`、`metadata.tex` 或
@@ -160,7 +160,7 @@ PDF 是版式主输出，DOCX 用于继续编辑。构建器会从入口目录�
 | 文档类型 | 类选项 | 年份 | 用途 |
 | --- | --- | ---: | --- |
 | 毕业论文（设计） | `thesis` | 2024 | 封面、声明、双语摘要、目录、正文、后置部分 |
-| 开题报告 | `proposal` | 2022 | 工作表中的七个开题栏目 |
+| 开题报告 | `proposal` | 2024 | 新版封面与七个开题栏目 |
 | 文献综述 | `literature-review` | 2024 | 封面、同页双语摘要、连续正文与参考文献 |
 
 两类学科采用各自的章节编号体系，具体层级随文种处理，不需要手写显示编号。综述正文

@@ -639,7 +639,7 @@ def parse_document_type(main_text: str) -> str:
 
 def resolve_profile(main_text: str, metadata: dict[str, str]) -> DocumentProfile:
     document_type = parse_document_type(main_text)
-    expected_year = "2022" if document_type == "proposal" else "2024"
+    expected_year = "2024"
     template_year = metadata.get("template-year", "").strip() or expected_year
     if template_year != expected_year:
         raise BuildError(

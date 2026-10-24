@@ -197,7 +197,7 @@ class CliTests(unittest.TestCase):
             main = (project / "latex" / "main.tex").read_text(encoding="utf-8")
             metadata = (project / "latex" / "metadata.tex").read_text(encoding="utf-8")
             self.assertIn(r"\documentclass[proposal,humanities,no-doi]{yibinthesis}", main)
-            self.assertIn("template-year           = 2022", metadata)
+            self.assertIn("template-year           = 2024", metadata)
 
     def test_new_proposal_has_semantic_headings_in_two_fields(self) -> None:
         for discipline in ("humanities", "science"):

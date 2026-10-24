@@ -65,7 +65,7 @@ my-document/
 后者写在 `metadata.tex` 的 `\yibinsetup` 中。年份必须按文档类型分别填写：
 
 - `thesis`：`template-year = 2024`；
-- `proposal`：`template-year = 2022`，对应 2022 工作表物理第 5 至 7 页；
+- `proposal`：`template-year = 2024`，对应 2024 开题报告封面与七个栏目；
 - `literature-review`：`template-year = 2024`，对应 2024 工科类、文科类文献综述模板。
 
 类型与年份不匹配时构建会停止。当前不支持 2025 论文模板。

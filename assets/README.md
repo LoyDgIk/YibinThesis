@@ -10,3 +10,7 @@ assets/yibin-university-logo.png
 若该文件不存在，LaTeX 与 Word 封面都会自动使用文字降级。
 
 机构名称、校徽、校名字样和其他识别标志不包含在项目代码的 GPLv3 许可范围内。
+
+2024 年开题报告封面另使用 `yibin-university-wordmark.png`（校名横排字样）和
+`yibin-university-seal.png`（圆形校徽）。二者从学校提供的 Word 模板图形资源提取，
+仅在开题封面中按新版位置分别呈现；它们同样不属于项目代码的 GPLv3 许可范围。

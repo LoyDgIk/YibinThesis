@@ -222,6 +222,7 @@ class WordProfileStructureTests(unittest.TestCase):
             "advisor": "李老师",
             "advisor-title": "讲师",
             "date": "2026年7月",
+            "advisor-signature-date": "2026年10月20日",
         }
 
     @staticmethod
@@ -510,6 +511,13 @@ class WordProfileStructureTests(unittest.TestCase):
         self.assertEqual(
             document.paragraphs[2].paragraph_format.line_spacing_rule,
             WD_LINE_SPACING.AT_LEAST,
+        )
+        advisor_paragraphs = document.tables[-1].rows[-1].cells[1].paragraphs
+        self.assertTrue(
+            any(
+                self._metadata()["advisor-signature-date"] in paragraph.text
+                for paragraph in advisor_paragraphs
+            )
         )
         self.assertAlmostEqual(document.sections[0].left_margin.pt, 85.05, places=2)
         self.assertAlmostEqual(document.sections[0].right_margin.pt, 62.35, places=2)

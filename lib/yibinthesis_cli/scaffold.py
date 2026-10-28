@@ -85,6 +85,7 @@ def metadata_tex(args, document_type: str) -> str:
   logo                    = {{builtin}},
   author-signature        = {{{_metadata_path_value(args.author_signature)}}},
   advisor-signature       = {{{_metadata_path_value(args.advisor_signature)}}},
+  advisor-signature-date  = {{{_value(args.advisor_signature_date)}}},
   signature-background    = {args.signature_background}
 }}
 """

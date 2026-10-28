@@ -300,6 +300,7 @@ def _append_proposal_table(
     heading_abstract_id: int,
     advisor_signature: Path | None = None,
     signature_background: str = "preserve",
+    signature_date: str = "",
 ) -> None:
     labels = {
         "significance": "选题意义",
@@ -365,7 +366,9 @@ def _append_proposal_table(
                 picture_run.add_picture(picture_source, width=Cm(2.6))
                 for doc_property in picture_run._r.iter(qn("wp:docPr")):
                     doc_property.attrib.pop("descr", None)
-            signature.add_run("    年    月    日")
+            signature.add_run(
+                f"    {signature_date}" if signature_date else "    年    月    日"
+            )
 
 
 def _configure_proposal_heading_styles(document: Document, discipline: str) -> None:
@@ -450,6 +453,7 @@ def _postprocess_proposal_docx(
         heading_abstract_id=heading_abstract_id,
         advisor_signature=advisor_signature,
         signature_background=signature_background,
+        signature_date=metadata.get("advisor-signature-date", "").strip(),
     )
 
     if len(document.sections) != 2:

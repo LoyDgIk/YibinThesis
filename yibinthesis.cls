@@ -226,6 +226,7 @@
 \tl_new:N \g_yibin_logo_tl
 \tl_new:N \g_yibin_author_signature_tl
 \tl_new:N \g_yibin_advisor_signature_tl
+\tl_new:N \g_yibin_advisor_signature_date_tl
 \tl_new:N \g_yibin_signature_background_tl
 \tl_new:N \g_yibin_template_year_tl
 \tl_new:N \g_yibin_expected_template_year_tl
@@ -279,6 +280,7 @@
   },
   author-signature         .tl_gset:N = \g_yibin_author_signature_tl,
   advisor-signature        .tl_gset:N = \g_yibin_advisor_signature_tl,
+  advisor-signature-date   .tl_gset:N = \g_yibin_advisor_signature_date_tl,
   signature-background     .choice:,
   signature-background / preserve .code:n =
     \tl_gset:Nn \g_yibin_signature_background_tl {preserve},
@@ -315,6 +317,7 @@
   logo                    = {builtin},
   author-signature        = {},
   advisor-signature       = {},
+  advisor-signature-date  = {},
   signature-background    = preserve,
   secrecy                 = public
 }
@@ -359,6 +362,10 @@
 \NewExpandableDocumentCommand{\yibinlogo}{}{\tl_use:N \g_yibin_logo_tl}
 \NewExpandableDocumentCommand{\yibinauthorsignature}{}{\tl_use:N \g_yibin_author_signature_tl}
 \NewExpandableDocumentCommand{\yibinadvisorsignature}{}{\tl_use:N \g_yibin_advisor_signature_tl}
+\NewExpandableDocumentCommand{\yibinadvisorsignaturedate}{}{\tl_use:N \g_yibin_advisor_signature_date_tl}
+\NewDocumentCommand{\yibinifadvisorsignaturedate}{mm}{
+  \tl_if_empty:NTF \g_yibin_advisor_signature_date_tl {#2} {#1}
+}
 \NewExpandableDocumentCommand{\yibinsignaturebackground}{}{\tl_use:N \g_yibin_signature_background_tl}
 
 \NewDocumentCommand{\yibinsecretbox}{}{

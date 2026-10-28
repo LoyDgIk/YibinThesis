@@ -29,7 +29,7 @@ def _new_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("target", help="项目目录（必须位于工具仓库之外）")
     parser.add_argument("--type", choices=DOCUMENT_TYPES, default="thesis", dest="document_type")
     parser.add_argument("--discipline", choices=DISCIPLINES, default="humanities")
-    for option in ("title", "english-title", "author", "student-id", "college", "affiliation-city", "affiliation-postcode", "major", "grade", "class-name", "advisor", "advisor-title", "version", "date", "declassify-year", "author-signature", "advisor-signature"):
+    for option in ("title", "english-title", "author", "student-id", "college", "affiliation-city", "affiliation-postcode", "major", "grade", "class-name", "advisor", "advisor-title", "version", "date", "declassify-year", "author-signature", "advisor-signature", "advisor-signature-date"):
         parser.add_argument(f"--{option}", dest=option.replace("-", "_"))
     parser.add_argument("--external-advisor", "--second-advisor", dest="external_advisor", help="校外导师；综述中为指导教师2")
     parser.add_argument("--external-advisor-title", "--second-advisor-title", dest="external_advisor_title", help="校外导师职称；综述中为指导教师2职称")

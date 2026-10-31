@@ -7,6 +7,13 @@ import unicodedata
 
 from docx.enum.text import WD_LINE_SPACING
 
+from style_families import (
+    LITERATURE_REVIEW,
+    PROPOSAL,
+    StyleFamily,
+    remap_from_thesis,
+)
+
 
 # Distance from the text margin to the left edge of every opening-report cover
 # row.  The rows share one origin so the label column and the value rules line
@@ -531,6 +538,21 @@ def _append_proposal_table(
             )
 
 
+def _paragraph_remap(family: StyleFamily) -> dict[str, str]:
+    """Paragraph-style remap for one document type.
+
+    Citation markers are character styles handled separately, so they are
+    excluded here.
+    """
+
+    citation_style = family.roles.get("citation")
+    return {
+        thesis_name: family_name
+        for thesis_name, family_name in remap_from_thesis(family).items()
+        if family_name != citation_style
+    }
+
+
 def _retarget_proposal_citation_runs(document: Document) -> None:
     """Move every citation marker onto the proposal's superscript character style."""
 
@@ -547,18 +569,7 @@ def _retarget_proposal_citation_runs(document: Document) -> None:
 
 def _configure_proposal_heading_styles(document: Document, discipline: str) -> None:
     """Move the field outline onto the proposal's own single-spaced ladder."""
-    style_map = {
-        STYLE_BODY: STYLE_PROPOSAL_BODY,
-        STYLE_HEADING_1: STYLE_PROPOSAL_HEADING_1,
-        STYLE_HEADING_2: STYLE_PROPOSAL_HEADING_2,
-        STYLE_HEADING_3: STYLE_PROPOSAL_HEADING_3,
-        STYLE_HEADING_4: STYLE_PROPOSAL_HEADING_4,
-        STYLE_UNNUMBERED_HEADING: STYLE_PROPOSAL_UNNUMBERED_HEADING,
-        STYLE_FIGURE: STYLE_PROPOSAL_FIGURE,
-        STYLE_FIGURE_CAPTION: STYLE_PROPOSAL_FIGURE_CAPTION,
-        STYLE_TABLE_CAPTION: STYLE_PROPOSAL_TABLE_CAPTION,
-        STYLE_BIBLIOGRAPHY: STYLE_PROPOSAL_BIBLIOGRAPHY,
-    }
+    style_map = _paragraph_remap(PROPOSAL)
     for paragraph in document.paragraphs:
         target = style_map.get(paragraph.style.name)
         if target:
@@ -566,12 +577,7 @@ def _configure_proposal_heading_styles(document: Document, discipline: str) -> N
     # Citation markers are run-level character styles, so they need their own
     # pass; leaving them on the thesis style keeps a 论文 name in a 开题 file.
     _retarget_proposal_citation_runs(document)
-    heading_styles = (
-        STYLE_PROPOSAL_HEADING_1,
-        STYLE_PROPOSAL_HEADING_2,
-        STYLE_PROPOSAL_HEADING_3,
-        STYLE_PROPOSAL_HEADING_4,
-    )
+    heading_styles = PROPOSAL.headings
     for style_name in heading_styles:
         style = document.styles[style_name]
         style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
@@ -831,31 +837,14 @@ def _insert_review_front_matter(document: Document, anchor, metadata: dict[str, 
 
 def _apply_review_styles(document: Document, discipline: str) -> None:
     """Keep the review's abstract page and flowing outline separate from thesis styles."""
-    style_map = {
-        STYLE_BODY: STYLE_REVIEW_BODY,
-        STYLE_FIRST_PARAGRAPH: STYLE_REVIEW_BODY,
-        STYLE_HEADING_1: STYLE_REVIEW_HEADING_1,
-        STYLE_HEADING_2: STYLE_REVIEW_HEADING_2,
-        STYLE_HEADING_3: STYLE_REVIEW_HEADING_3,
-        STYLE_HEADING_4: STYLE_REVIEW_HEADING_4,
-        STYLE_UNNUMBERED_HEADING: STYLE_REVIEW_UNNUMBERED_HEADING,
-        STYLE_FRONT_TITLE: STYLE_REVIEW_ABSTRACT_TITLE,
-        STYLE_ENGLISH_ABSTRACT_TITLE: STYLE_REVIEW_ENGLISH_ABSTRACT_TITLE,
-        STYLE_CHINESE_ABSTRACT: STYLE_REVIEW_CHINESE_ABSTRACT,
-        STYLE_ENGLISH_ABSTRACT: STYLE_REVIEW_ENGLISH_ABSTRACT,
-        STYLE_KEYWORDS: STYLE_REVIEW_KEYWORDS,
-        STYLE_BIBLIOGRAPHY: STYLE_REVIEW_BIBLIOGRAPHY,
-    }
+    style_map = _paragraph_remap(LITERATURE_REVIEW)
     for paragraph in document.paragraphs:
         target = style_map.get(paragraph.style.name)
         if target == STYLE_REVIEW_KEYWORDS and paragraph.text.startswith("Keywords:"):
             target = STYLE_REVIEW_ENGLISH_KEYWORDS
         if target:
             paragraph.style = document.styles[target]
-    heading_styles = (
-        STYLE_REVIEW_HEADING_1, STYLE_REVIEW_HEADING_2,
-        STYLE_REVIEW_HEADING_3, STYLE_REVIEW_HEADING_4,
-    )
+    heading_styles = LITERATURE_REVIEW.headings
     for style_name in heading_styles:
         style = document.styles[style_name]
         style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT

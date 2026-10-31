@@ -1,0 +1,146 @@
+{
+  "shared": {
+    "cover_layout_table": "YibinCoverLayout",
+    "front_layout_table": "YibinFrontLayout"
+  },
+  "families": {
+    "literature-review": {
+      "prefix": "宜宾综述",
+      "styles": {
+        "abstract_title": "宜宾综述-中文摘要标题",
+        "affiliation": "宜宾综述-作者单位",
+        "author": "宜宾综述-作者",
+        "bibliography": "宜宾综述-参考文献",
+        "body": "宜宾综述-正文",
+        "chinese_abstract": "宜宾综述-中文摘要正文",
+        "cover_field": "宜宾综述-封面填写行",
+        "cover_label": "宜宾综述-封面标签",
+        "cover_value": "宜宾综述-封面填值",
+        "date": "宜宾综述-日期",
+        "document_title": "宜宾综述-文档标题",
+        "english_abstract": "宜宾综述-英文摘要正文",
+        "english_abstract_title": "宜宾综述-英文摘要标题",
+        "english_keywords": "宜宾综述-英文关键词",
+        "heading_1": "宜宾综述-一级标题",
+        "heading_2": "宜宾综述-二级标题",
+        "heading_3": "宜宾综述-三级标题",
+        "heading_4": "宜宾综述-四级标题",
+        "info_label": "宜宾综述-信息标签",
+        "info_table": "YibinReviewInfoLayout",
+        "info_value": "宜宾综述-信息值",
+        "keywords": "宜宾综述-中文关键词",
+        "thesis_title": "宜宾综述-论文题目",
+        "unnumbered_heading": "宜宾综述-无编号标题"
+      },
+      "headings": [
+        "宜宾综述-一级标题",
+        "宜宾综述-二级标题",
+        "宜宾综述-三级标题",
+        "宜宾综述-四级标题"
+      ],
+      "citation": null,
+      "overrides": {
+        "bibliography": "bibliography",
+        "body": "body",
+        "chinese_abstract": "chinese_abstract",
+        "english_abstract": "english_abstract",
+        "english_abstract_title": "english_abstract_title",
+        "first_paragraph": "body",
+        "front_title": "abstract_title",
+        "heading_1": "heading_1",
+        "heading_2": "heading_2",
+        "heading_3": "heading_3",
+        "heading_4": "heading_4",
+        "keywords": "keywords",
+        "unnumbered_heading": "unnumbered_heading"
+      }
+    },
+    "proposal": {
+      "prefix": "宜宾开题",
+      "styles": {
+        "bibliography": "宜宾开题-参考文献",
+        "body": "宜宾开题-正文",
+        "citation": "宜宾开题-文献上标",
+        "figure": "宜宾开题-插图",
+        "figure_caption": "宜宾开题-图题",
+        "form_table": "YibinProposalForm",
+        "heading_1": "宜宾开题-一级标题",
+        "heading_2": "宜宾开题-二级标题",
+        "heading_3": "宜宾开题-三级标题",
+        "heading_4": "宜宾开题-四级标题",
+        "label": "宜宾开题-栏目",
+        "prompt": "宜宾开题-提示",
+        "signature": "宜宾开题-签名",
+        "subtitle": "宜宾开题-副标题",
+        "table_caption": "宜宾开题-表题",
+        "title": "宜宾开题-标题",
+        "unnumbered_heading": "宜宾开题-无编号标题"
+      },
+      "headings": [
+        "宜宾开题-一级标题",
+        "宜宾开题-二级标题",
+        "宜宾开题-三级标题",
+        "宜宾开题-四级标题"
+      ],
+      "citation": "宜宾开题-文献上标",
+      "overrides": {
+        "bibliography": "bibliography",
+        "body": "body",
+        "citation": "citation",
+        "figure": "figure",
+        "figure_caption": "figure_caption",
+        "heading_1": "heading_1",
+        "heading_2": "heading_2",
+        "heading_3": "heading_3",
+        "heading_4": "heading_4",
+        "table_caption": "table_caption",
+        "unnumbered_heading": "unnumbered_heading"
+      }
+    },
+    "thesis": {
+      "prefix": "宜宾论文",
+      "styles": {
+        "appendix_heading": "宜宾论文-附录标题",
+        "appendix_section": "宜宾论文-附录二级标题",
+        "bibliography": "宜宾论文-参考文献",
+        "body": "宜宾论文-正文",
+        "chinese_abstract": "宜宾论文-中文摘要正文",
+        "citation": "宜宾论文-文献上标",
+        "english_abstract": "宜宾论文-英文摘要正文",
+        "english_abstract_title": "宜宾论文-英文摘要标题",
+        "equation": "宜宾论文-公式",
+        "figure": "宜宾论文-插图",
+        "figure_caption": "宜宾论文-图题",
+        "first_paragraph": "宜宾论文-首段",
+        "front_title": "宜宾论文-中文页标题",
+        "heading_1": "宜宾论文-一级标题",
+        "heading_2": "宜宾论文-二级标题",
+        "heading_3": "宜宾论文-三级标题",
+        "heading_4": "宜宾论文-四级标题",
+        "keywords": "宜宾论文-关键词",
+        "list_body": "宜宾论文-列表正文",
+        "notes": "宜宾论文-注释",
+        "table_caption": "宜宾论文-表题",
+        "table_center": "宜宾论文-表格居中",
+        "table_continuation": "宜宾论文-续表题",
+        "table_header": "宜宾论文-表头",
+        "table_header_left": "宜宾论文-表头左对齐",
+        "table_header_right": "宜宾论文-表头右对齐",
+        "table_of_figures": "Table of Figures",
+        "table_right": "宜宾论文-表格右对齐",
+        "table_text": "宜宾论文-表格正文",
+        "three_line_table": "宜宾论文-三线表",
+        "toc_title": "宜宾论文-目录标题",
+        "unnumbered_heading": "宜宾论文-无编号标题"
+      },
+      "headings": [
+        "宜宾论文-一级标题",
+        "宜宾论文-二级标题",
+        "宜宾论文-三级标题",
+        "宜宾论文-四级标题"
+      ],
+      "citation": "宜宾论文-文献上标",
+      "overrides": {}
+    }
+  }
+}

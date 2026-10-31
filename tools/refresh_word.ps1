@@ -22,6 +22,51 @@ if (-not [string]::IsNullOrWhiteSpace($PdfOutput)) {
     New-Item -ItemType Directory -Force (Split-Path -Parent $pdfPath) | Out-Null
 }
 
+$script:StyleFamilyTable = $null
+
+function Get-StyleFamilyTable {
+    if ($null -ne $script:StyleFamilyTable) {
+        return $script:StyleFamilyTable
+    }
+    $tablePath = Join-Path (Split-Path -Parent $PSScriptRoot) 'lib/style-families.json'
+    if (-not (Test-Path -LiteralPath $tablePath -PathType Leaf)) {
+        throw "Style family table not found: $tablePath"
+    }
+    $script:StyleFamilyTable = Get-Content -LiteralPath $tablePath -Raw -Encoding UTF8 |
+        ConvertFrom-Json
+    return $script:StyleFamilyTable
+}
+
+function Get-StyleFamily {
+    param([string]$DocumentType)
+
+    $table = Get-StyleFamilyTable
+    if ([string]::IsNullOrWhiteSpace($DocumentType)) {
+        return $null
+    }
+    return $table.families.$DocumentType
+}
+
+function Assert-StyleFamilyPresent {
+    param($Document, $StyleFamily)
+
+    if ($null -eq $StyleFamily) {
+        return
+    }
+    $missing = @()
+    foreach ($entry in $StyleFamily.styles.PSObject.Properties) {
+        try {
+            [void]$Document.Styles.Item([string]$entry.Value)
+        }
+        catch {
+            $missing += "$($entry.Name)=$($entry.Value)"
+        }
+    }
+    if ($missing.Count -gt 0) {
+        throw "Style family '$($StyleFamily.prefix)' is missing: $($missing -join ', ')"
+    }
+}
+
 function Assert-Near {
     param(
         [string]$Label,
@@ -1674,6 +1719,14 @@ try {
         -Document $document `
         -CoreProperties $coreProperties
     Write-Host "Word document profile: $documentType"
+    $styleFamily = Get-StyleFamily -DocumentType $documentType
+    Assert-StyleFamilyPresent -Document $document -StyleFamily $styleFamily
+    $citationStyleName = if ($null -ne $styleFamily -and $styleFamily.citation) {
+        [string]$styleFamily.citation
+    }
+    else {
+        '宜宾论文-文献上标'
+    }
 
     try { $document.Bookmarks.ShowHidden = $true } catch {}
     Normalize-NativeCaptionSequences -Document $document -Word $word
@@ -1797,8 +1850,7 @@ try {
                 @('宜宾开题-插图', '宋体', 'Times New Roman', 12, $false),
                 @('宜宾开题-图题', '宋体', 'Times New Roman', 10.5, $false),
                 @('宜宾开题-表题', '宋体', 'Times New Roman', 10.5, $false),
-                @('宜宾开题-参考文献', '宋体', 'Times New Roman', 10.5, $false),
-                @('宜宾开题-文献上标', '宋体', 'Times New Roman', 12, $false)
+                @('宜宾开题-参考文献', '宋体', 'Times New Roman', 10.5, $false)
             )
         }
         'literature-review' {
@@ -1879,12 +1931,6 @@ try {
     Stabilize-TableRowsForContinuation -Document $document
     Repair-OrphanedTableHeaders -Document $document
     Add-TableContinuations -Document $document
-    $citationStyleName = if ($documentType -eq 'proposal') {
-        '宜宾开题-文献上标'
-    }
-    else {
-        '宜宾论文-文献上标'
-    }
     Set-CitationFieldStyles -Document $document -StyleName $citationStyleName
     $document.Repaginate()
     # Continuation captions and row stabilization can change physical page

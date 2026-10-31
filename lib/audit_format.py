@@ -12,6 +12,8 @@ import zipfile
 from pathlib import Path
 from xml.etree import ElementTree as ET
 
+from style_families import family_for
+
 
 W_NS = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 W = f"{{{W_NS}}}"
@@ -590,32 +592,17 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
     is_thesis = document_type == "thesis"
     is_proposal = document_type == "proposal"
     has_official_cover = is_thesis or is_proposal
+    # The review keeps the thesis marker; every other type owns one.
+    citation_style_name = (
+        family_for(document_type).roles.get("citation")
+        or family_for("thesis").name("citation")
+    )
     by_id = styles_by_id(styles_root)
     by_name = style_map(styles_root)
     heading_num_ids: list[str] = []
-    # Every document type carries its own four heading styles: the review and
+    # Every document type carries its own four heading styles; the review and
     # the proposal no longer borrow the thesis ladder.
-    if document_type == "literature-review":
-        heading_style_names = (
-            "宜宾综述-一级标题",
-            "宜宾综述-二级标题",
-            "宜宾综述-三级标题",
-            "宜宾综述-四级标题",
-        )
-    elif document_type == "proposal":
-        heading_style_names = (
-            "宜宾开题-一级标题",
-            "宜宾开题-二级标题",
-            "宜宾开题-三级标题",
-            "宜宾开题-四级标题",
-        )
-    else:
-        heading_style_names = (
-            "宜宾论文-一级标题",
-            "宜宾论文-二级标题",
-            "宜宾论文-三级标题",
-            "宜宾论文-四级标题",
-        )
+    heading_style_names = family_for(document_type).headings
     for level, style_key in enumerate(heading_style_names):
         style = by_name.get(style_key.casefold())
         audit.true(f"{prefix}.{style_key} style is missing", style is not None)
@@ -1523,9 +1510,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
             f"{prefix}.citation[{citation_index}] cached result is missing",
             bool(result_runs),
         )
-        expected_citation_style = (
-            "宜宾开题-文献上标" if is_proposal else "宜宾论文-文献上标"
-        )
+        expected_citation_style = citation_style_name
         for run in result_runs:
             audit.equal(
                 f"{prefix}.citation[{citation_index}].result-style",
@@ -1536,8 +1521,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
     citation_marker_runs = [
         run
         for run in document.findall(f".//{W}r")
-        if effective_run_style_name(run, by_id)
-        == ("宜宾开题-文献上标" if is_proposal else "宜宾论文-文献上标")
+        if effective_run_style_name(run, by_id) == citation_style_name
         and "".join(node.text or "" for node in run.findall(W + "t"))
         in {"[", "]", ","}
     ]

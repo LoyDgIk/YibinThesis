@@ -95,7 +95,13 @@ def _hide_run(run) -> None:
     r_pr = run._r.get_or_add_rPr(); vanish = OxmlElement("w:vanish"); r_pr.append(vanish)
 
 
-def _set_fixed_table_geometry(table, widths_cm: Iterable[float], *, style_name: str) -> None:
+def _set_fixed_table_geometry(
+    table,
+    widths_cm: Iterable[float],
+    *,
+    style_name: str,
+    indent_cm: float | None = None,
+) -> None:
     """Give Word a complete fixed-width grid instead of width hints.
 
     Setting only ``cell.width`` leaves the original equal-column ``tblGrid``
@@ -123,7 +129,7 @@ def _set_fixed_table_geometry(table, widths_cm: Iterable[float], *, style_name: 
         table_indent = OxmlElement("w:tblInd")
         tbl_pr.append(table_indent)
     table_indent.set(qn("w:type"), "dxa")
-    table_indent.set(qn("w:w"), "0")
+    table_indent.set(qn("w:w"), str(int(Cm(indent_cm).twips) if indent_cm else 0))
 
     layout = tbl_pr.find(qn("w:tblLayout"))
     if layout is None:
@@ -279,6 +285,7 @@ def _insert_cover_table(
     *,
     row_height_pt: float,
     hidden_tokens: str = "",
+    left_indent_cm: float | None = None,
 ):
     """Insert one official cover row as a borderless layout table."""
     table = document.add_table(rows=1, cols=len(cells))
@@ -288,7 +295,12 @@ def _insert_cover_table(
     # that common origin; centring narrower rows shifts every underline.
     table.alignment = WD_TABLE_ALIGNMENT.LEFT
     table.autofit = False
-    _set_fixed_table_geometry(table, (cell[2] for cell in cells), style_name="YibinCoverLayout")
+    _set_fixed_table_geometry(
+        table,
+        (cell[2] for cell in cells),
+        style_name="YibinCoverLayout",
+        indent_cm=left_indent_cm,
+    )
     _set_table_borders_none(table)
     row = table.rows[0]
     row.height = Pt(row_height_pt)
@@ -1214,16 +1226,21 @@ def _restart_cell_heading_numbering(
     document: Document,
     cell,
     abstract_id: int,
+    *,
+    style_names: tuple[str, ...] | None = None,
 ) -> None:
     """Start each root heading branch explicitly within its proposal field."""
 
     levels = {
-        STYLE_HEADING_1: 0,
-        STYLE_HEADING_2: 1,
-        STYLE_HEADING_3: 2,
-        STYLE_HEADING_4: 3,
-        **{name: index for index, name in enumerate(BUILTIN_HEADING_STYLES)},
+        name: index
+        for index, name in enumerate(
+            style_names
+            or (STYLE_HEADING_1, STYLE_HEADING_2, STYLE_HEADING_3, STYLE_HEADING_4)
+        )
     }
+    levels.update(
+        {name: index for index, name in enumerate(BUILTIN_HEADING_STYLES)}
+    )
     headings = [p for p in cell.paragraphs if p.style.name in levels]
     if not headings:
         return

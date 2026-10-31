@@ -1675,8 +1675,14 @@ class OptionalCoverAndDirectoryTests(unittest.TestCase):
 
     def test_generated_docx_audit_uses_the_review_heading_styles(self) -> None:
         source = (ROOT / "lib" / "audit_format.py").read_text(encoding="utf-8")
-        self.assertIn('if document_type == "literature-review" else', source)
+        self.assertIn('if document_type == "literature-review":', source)
         self.assertIn('"宜宾综述-一级标题"', source)
+
+    def test_generated_docx_audit_uses_the_proposal_heading_styles(self) -> None:
+        source = (ROOT / "lib" / "audit_format.py").read_text(encoding="utf-8")
+        self.assertIn('elif document_type == "proposal":', source)
+        self.assertIn('"宜宾开题-一级标题"', source)
+        self.assertIn('"宜宾开题-四级标题"', source)
 
     def test_format_audit_does_not_accept_unused_manuscript_root(self) -> None:
         auditor = (ROOT / "lib" / "audit_format.py").read_text(encoding="utf-8")

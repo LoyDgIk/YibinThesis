@@ -439,10 +439,25 @@ class WordProfileStructureTests(unittest.TestCase):
         )
         self.assertEqual([len(table.rows) for table in document.tables], [1, 1, 1, 1, 1, 1, 1, 7])
         title_table = document.tables[0]
-        self.assertEqual(title_table.alignment, BUILD_WORD.WD_TABLE_ALIGNMENT.RIGHT)
+        self.assertEqual(title_table.alignment, BUILD_WORD.WD_TABLE_ALIGNMENT.LEFT)
         self.assertEqual(
             [int(grid.get(BUILD_WORD.qn("w:w"))) for grid in title_table._tbl.tblGrid],
-            [1480, 6094],
+            [1559, 5981],
+        )
+        # Every cover row starts on one shared origin, so the label column and
+        # the value rules line up down the whole form.
+        cover_indents = {
+            int(
+                table._tbl.tblPr.find(BUILD_WORD.qn("w:tblInd")).get(BUILD_WORD.qn("w:w"))
+            )
+            for table in document.tables[:7]
+        }
+        self.assertEqual(cover_indents, {1389})
+        self.assertTrue(
+            all(
+                table.alignment == BUILD_WORD.WD_TABLE_ALIGNMENT.LEFT
+                for table in document.tables[:7]
+            )
         )
         title_row_height = title_table.rows[0]._tr.trPr.find(BUILD_WORD.qn("w:trHeight"))
         self.assertEqual(title_row_height.get(BUILD_WORD.qn("w:hRule")), "atLeast")
@@ -502,6 +517,32 @@ class WordProfileStructureTests(unittest.TestCase):
         cover_text = "\n".join(paragraph.text for paragraph in document.paragraphs)
         self.assertIn("本科生毕业论文开题报告", cover_text)
         self.assertIn("教务处制表", cover_text)
+        # Two-character labels are padded to the width of a four-character one.
+        self.assertEqual(
+            [
+                row.cells[0].paragraphs[0].text
+                for table in document.tables[:5]
+                for row in table.rows
+            ],
+            ["题    目", "学院（部）", "专    业", "学生姓名", "学    号"],
+        )
+        footer_run = next(
+            paragraph.runs[0]
+            for paragraph in document.paragraphs
+            if paragraph.text == "教务处制表"
+        )
+        self.assertTrue(footer_run.font.bold)
+        self.assertEqual(footer_run.font.size.pt, 16)
+        # Label and value share one exact line box, so the rule hugs the value
+        # instead of sitting below the label.
+        for table in document.tables[1:7]:
+            boxes = {
+                paragraph.paragraph_format.line_spacing.pt
+                for row in table.rows
+                for cell in row.cells
+                for paragraph in cell.paragraphs
+            }
+            self.assertEqual(boxes, {18})
         self.assertNotIn("2026年7月", cover_text)
         self.assertEqual(len(document.inline_shapes), 2)
         self.assertEqual(

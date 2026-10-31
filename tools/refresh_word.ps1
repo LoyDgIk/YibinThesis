@@ -1,4 +1,4 @@
-﻿#requires -Version 5.1
+#requires -Version 5.1
 
 [CmdletBinding()]
 param(
@@ -975,13 +975,16 @@ function Update-WordDocumentFields {
 }
 
 function Set-CitationFieldStyles {
-    param([Parameter(Mandatory = $true)]$Document)
+    param(
+        [Parameter(Mandatory = $true)]$Document,
+        [string]$StyleName = '宜宾论文-文献上标'
+    )
 
     try {
-        $citationStyle = $Document.Styles.Item('宜宾论文-文献上标')
+        $citationStyle = $Document.Styles.Item($StyleName)
     }
     catch {
-        throw 'Reusable citation style 宜宾论文-文献上标 is missing.'
+        throw "Reusable citation style $StyleName is missing."
     }
     foreach ($storyType in 1..17) {
         try {
@@ -1786,7 +1789,16 @@ try {
                 @('宜宾开题-正文', '宋体', 'Times New Roman', 12, $false),
                 @('宜宾开题-提示', '宋体', 'Times New Roman', 12, $false),
                 @('宜宾开题-无编号标题', '楷体', 'Times New Roman', 15, $true),
-                @('宜宾开题-签名', '宋体', 'Times New Roman', 12, $false)
+                @('宜宾开题-签名', '宋体', 'Times New Roman', 12, $false),
+                @('宜宾开题-一级标题', '黑体', 'Times New Roman', 12, $true),
+                @('宜宾开题-二级标题', '楷体', 'Times New Roman', 12, $true),
+                @('宜宾开题-三级标题', '宋体', 'Times New Roman', 12, $true),
+                @('宜宾开题-四级标题', '宋体', 'Times New Roman', 12, $true),
+                @('宜宾开题-插图', '宋体', 'Times New Roman', 12, $false),
+                @('宜宾开题-图题', '宋体', 'Times New Roman', 10.5, $false),
+                @('宜宾开题-表题', '宋体', 'Times New Roman', 10.5, $false),
+                @('宜宾开题-参考文献', '宋体', 'Times New Roman', 10.5, $false),
+                @('宜宾开题-文献上标', '宋体', 'Times New Roman', 12, $false)
             )
         }
         'literature-review' {
@@ -1867,7 +1879,13 @@ try {
     Stabilize-TableRowsForContinuation -Document $document
     Repair-OrphanedTableHeaders -Document $document
     Add-TableContinuations -Document $document
-    Set-CitationFieldStyles -Document $document
+    $citationStyleName = if ($documentType -eq 'proposal') {
+        '宜宾开题-文献上标'
+    }
+    else {
+        '宜宾论文-文献上标'
+    }
+    Set-CitationFieldStyles -Document $document -StyleName $citationStyleName
     $document.Repaginate()
     # Continuation captions and row stabilization can change physical page
     # positions.  Refresh the native TOC/figure/table fields only after those

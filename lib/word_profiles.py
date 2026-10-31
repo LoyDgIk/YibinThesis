@@ -8,6 +8,22 @@ import unicodedata
 from docx.enum.text import WD_LINE_SPACING
 
 
+# Distance from the text margin to the left edge of every opening-report cover
+# row.  The rows share one origin so the label column and the value rules line
+# up; only the long-title row reaches further to the right.
+PROPOSAL_COVER_LEFT_INDENT_CM = 2.45
+
+# Every cell in a cover row must use one exact line box.  Mixing the label's
+# single spacing with the rule paragraph's taller box dropped the value text
+# and the rule below the label instead of letting them share a baseline.
+PROPOSAL_COVER_ROW_LINE_PT = 18
+PROPOSAL_COVER_TITLE_LINE_PT = 24
+
+# An empty 指导教师意见 field still needs a writable block, so it reserves this
+# many blank lines above the signature row.
+PROPOSAL_ADVISOR_OPINION_BLANK_LINES = 6
+
+
 def bind_core(core):
     """Expose core helpers to profile functions without duplicating them."""
     module = sys.modules[__name__]
@@ -58,22 +74,130 @@ def _set_form_cell_margins(cell, *, top: int = 90, left: int = 110, bottom: int 
         node.set(qn("w:type"), "dxa")
 
 
+_COVER_TITLE_ASCII_JOINERS = "-_./&%"
+
+
+def _proposal_title_tokens(text: str, font_pt: float) -> list[tuple[str, float]]:
+    """Split a cover title into unbreakable units and their rendered widths.
+
+    A space travels with the unit in front of it, so joining the units back
+    reproduces the title exactly and a line may still break after that space.
+    """
+
+    tokens: list[list[object]] = []
+    pending = ""
+
+    def width_of(run: str) -> float:
+        return len(run) * font_pt * 0.5
+
+    def flush() -> None:
+        nonlocal pending
+        if pending:
+            tokens.append([pending, width_of(pending)])
+            pending = ""
+
+    def append_space() -> None:
+        if not tokens:
+            tokens.append([" ", font_pt * 0.5])
+            return
+        tokens[-1][0] = str(tokens[-1][0]) + " "
+        tokens[-1][1] = float(tokens[-1][1]) + font_pt * 0.5
+
+    for char in text:
+        if char.isspace():
+            flush()
+            append_space()
+            continue
+        if char.isascii() and (char.isalnum() or char in _COVER_TITLE_ASCII_JOINERS):
+            pending += char
+            continue
+        flush()
+        # The em dash, the interpunct and friends report "ambiguous" width but
+        # render full width in a Chinese font; counting them as half width made
+        # the estimate fall short and let Word wrap the line a second time.
+        unit = font_pt if unicodedata.east_asian_width(char) in {"F", "W", "A"} else font_pt * 0.5
+        tokens.append([char, unit])
+    flush()
+    return [(str(text), float(width)) for text, width in tokens]
+
+
+def _split_proposal_title(
+    tokens: list[tuple[str, float]], max_width: float, line_count: int
+) -> list[tuple[int, int]] | None:
+    """Pick the break points that minimise the widest line for that count."""
+
+    widths = [width for _, width in tokens]
+    count = len(widths)
+    prefix = [0.0]
+    for width in widths:
+        prefix.append(prefix[-1] + width)
+
+    infinite = float("inf")
+    best = [[infinite] * (line_count + 1) for _ in range(count + 1)]
+    cut = [[-1] * (line_count + 1) for _ in range(count + 1)]
+    best[0][0] = 0.0
+    for line in range(1, line_count + 1):
+        for end in range(1, count + 1):
+            for start in range(line - 1, end):
+                if best[start][line - 1] == infinite:
+                    continue
+                span = prefix[end] - prefix[start]
+                # A single over-long unit cannot be broken any further.
+                if span > max_width and end - start > 1:
+                    continue
+                candidate = max(best[start][line - 1], span)
+                if candidate < best[end][line]:
+                    best[end][line] = candidate
+                    cut[end][line] = start
+    if best[count][line_count] == infinite:
+        return None
+
+    ranges: list[tuple[int, int]] = []
+    end, line = count, line_count
+    while line > 0:
+        start = cut[end][line]
+        ranges.append((start, end))
+        end, line = start, line - 1
+    ranges.reverse()
+    return ranges
+
+
 def _wrap_proposal_title(text: str, width_cm: float, font_pt: float = 14) -> list[str]:
-    """Split a long cover title into underlined, full-width Word paragraphs."""
+    """Split a long cover title into underlined, full-width Word paragraphs.
+
+    Word draws the cover rule as each paragraph's bottom border, so every line
+    must already fit the cell: a line that overflows is wrapped again by Word
+    and leaves a stray rule behind the overflow.  Latin runs stay unbroken and
+    the lines are balanced instead of filling the first one edge to edge.
+    """
+
     max_width = Cm(width_cm).pt - 4.5
-    lines: list[str] = []
-    line: list[str] = []
+    tokens = _proposal_title_tokens(text.strip(), font_pt)
+    if not tokens:
+        return [""]
+    # A greedy pass decides how many lines a balanced split may use.
+    line_count = 1
     line_width = 0.0
-    for char in text.strip():
-        char_width = font_pt if unicodedata.east_asian_width(char) in {"F", "W"} else font_pt / 2
-        if line and line_width + char_width > max_width:
-            lines.append("".join(line).rstrip())
-            line = []
-            line_width = 0.0
-        line.append(char)
-        line_width += char_width
-    if line:
-        lines.append("".join(line).rstrip())
+    for _, width in tokens:
+        if line_width and line_width + width > max_width:
+            line_count += 1
+            line_width = width
+        else:
+            line_width += width
+    ranges = _split_proposal_title(tokens, max_width, line_count)
+    if ranges is None:
+        ranges = []
+        start = 0
+        line_width = 0.0
+        for index, (_, width) in enumerate(tokens):
+            if line_width and line_width + width > max_width:
+                ranges.append((start, index))
+                start = index
+                line_width = width
+            else:
+                line_width += width
+        ranges.append((start, len(tokens)))
+    lines = ["".join(token for token, _ in tokens[a:b]) for a, b in ranges]
     return lines or [""]
 
 
@@ -217,16 +341,20 @@ def _insert_proposal_cover(
     cover_footer.alignment = WD_ALIGN_PARAGRAPH.CENTER
     cover_footer.paragraph_format.space_before = Pt(34)
     cover_footer.paragraph_format.space_after = Pt(0)
-    cover_footer.paragraph_format.line_spacing = Pt(18)
-    _set_run_fonts(cover_footer.add_run("教务处制表"), "SimSun", "SimSun", 14)
+    cover_footer.paragraph_format.line_spacing = Pt(20)
+    _set_run_fonts(
+        cover_footer.add_run("教务处制表"), "SimSun", "SimSun", 16, bold=True
+    )
 
+    # Every row starts on one shared origin so the label column and the value
+    # rules line up; the long-title row only extends further to the right.
     cover_rows = (
-        (["label", "题  目", 2.61], ["value", metadata.get("title", ""), 10.75]),
+        (["label", "题    目", 2.75], ["value", metadata.get("title", ""), 10.55]),
         (["label", "学院（部）", 2.75], ["value", metadata.get("college", ""), 8.15]),
-        (["label", "专  业", 2.75], ["value", metadata.get("major", ""), 8.15]),
+        (["label", "专    业", 2.75], ["value", metadata.get("major", ""), 8.15]),
         (["label", "学生姓名", 2.75], ["value", metadata.get("author", ""), 8.15]),
         (
-            ["label", "学  号", 2.75], ["value", metadata.get("student-id", ""), 4.55],
+            ["label", "学    号", 2.75], ["value", metadata.get("student-id", ""), 4.55],
             ["label", "年级", 1.2], ["value", format_grade_class(metadata), 2.4],
         ),
         (
@@ -244,14 +372,17 @@ def _insert_proposal_cover(
         title_lines = (
             _wrap_proposal_title(cells[1][1], cells[1][2]) if row_index == 0 else []
         )
+        row_line_pt = (
+            PROPOSAL_COVER_TITLE_LINE_PT
+            if row_index == 0
+            else PROPOSAL_COVER_ROW_LINE_PT
+        )
         table = _insert_cover_table(
             document,
             cover_footer,
             [(kind, value, width) for kind, value, width in cells],
             row_height_pt=max(48, 24 * len(title_lines)) if row_index == 0 else 36,
-        )
-        table.alignment = (
-            WD_TABLE_ALIGNMENT.RIGHT if row_index == 0 else WD_TABLE_ALIGNMENT.CENTER
+            left_indent_cm=PROPOSAL_COVER_LEFT_INDENT_CM,
         )
         if row_index == 0:
             table.rows[0].height_rule = WD_ROW_HEIGHT_RULE.AT_LEAST
@@ -268,7 +399,7 @@ def _insert_proposal_cover(
                     title_paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
                     title_paragraph.paragraph_format.space_before = Pt(0)
                     title_paragraph.paragraph_format.space_after = Pt(0)
-                    title_paragraph.paragraph_format.line_spacing = Pt(24)
+                    title_paragraph.paragraph_format.line_spacing = Pt(row_line_pt)
                     title_paragraph.paragraph_format.keep_together = True
                     _set_paragraph_bottom_border(title_paragraph)
                     _set_paragraph_between_border(title_paragraph)
@@ -284,6 +415,9 @@ def _insert_proposal_cover(
                     _set_run_fonts(run, "SimSun", "SimSun", 14, bold=True, underline=False)
                 else:
                     _set_run_fonts(run, "SimSun", "Times New Roman", 14, bold=False, underline=False)
+            # Share the row's line box with the label so text and rule sit on
+            # the same baseline instead of drifting below it.
+            cell.paragraphs[0].paragraph_format.line_spacing = Pt(row_line_pt)
 
     # Keep every cover block free of inherited first-line indents.
     for paragraph in (logo_paragraph, title, seal_paragraph, fields_gap, cover_footer):
@@ -352,8 +486,34 @@ def _append_proposal_table(
         label_paragraph.add_run("\n".join(labels[key]))
         _move_nodes_to_cell(body_cell, field_nodes[key], document)
         _fit_nested_tables_to_cell(body_cell)
-        _restart_cell_heading_numbering(document, body_cell, heading_abstract_id)
+        _restart_cell_heading_numbering(
+            document,
+            body_cell,
+            heading_abstract_id,
+            style_names=(
+                STYLE_PROPOSAL_HEADING_1,
+                STYLE_PROPOSAL_HEADING_2,
+                STYLE_PROPOSAL_HEADING_3,
+                STYLE_PROPOSAL_HEADING_4,
+            ),
+        )
         if key == "advisor-opinion":
+            if not any(
+                paragraph.text.strip() for paragraph in body_cell.paragraphs
+            ):
+                # Nothing to print yet: keep six blank lines so the supervisor
+                # can still write the opinion on the printed form.
+                existing = sum(
+                    1
+                    for paragraph in body_cell.paragraphs
+                    if not paragraph.text.strip()
+                )
+                for _ in range(
+                    max(0, PROPOSAL_ADVISOR_OPINION_BLANK_LINES - existing)
+                ):
+                    blank = body_cell.add_paragraph(style=STYLE_PROPOSAL_BODY)
+                    blank.paragraph_format.space_before = Pt(0)
+                    blank.paragraph_format.space_after = Pt(0)
             signature = body_cell.add_paragraph(style=STYLE_PROPOSAL_SIGNATURE)
             signature.add_run("签名： ")
             if advisor_signature is None:
@@ -371,10 +531,49 @@ def _append_proposal_table(
             )
 
 
+def _retarget_proposal_citation_runs(document: Document) -> None:
+    """Move every citation marker onto the proposal's superscript character style."""
+
+    citation_id = document.styles[STYLE_CITATION].style_id
+    proposal_citation_id = document.styles[STYLE_PROPOSAL_CITATION].style_id
+    for run in document.element.body.iter(qn("w:r")):
+        run_properties = run.find(qn("w:rPr"))
+        if run_properties is None:
+            continue
+        run_style = run_properties.find(qn("w:rStyle"))
+        if run_style is not None and run_style.get(qn("w:val")) == citation_id:
+            run_style.set(qn("w:val"), proposal_citation_id)
+
+
 def _configure_proposal_heading_styles(document: Document, discipline: str) -> None:
-    """Apply the field outline without thesis chapter pagination."""
-    for name in (STYLE_HEADING_1, STYLE_HEADING_2, STYLE_HEADING_3, STYLE_HEADING_4):
-        style = document.styles[name]
+    """Move the field outline onto the proposal's own single-spaced ladder."""
+    style_map = {
+        STYLE_BODY: STYLE_PROPOSAL_BODY,
+        STYLE_HEADING_1: STYLE_PROPOSAL_HEADING_1,
+        STYLE_HEADING_2: STYLE_PROPOSAL_HEADING_2,
+        STYLE_HEADING_3: STYLE_PROPOSAL_HEADING_3,
+        STYLE_HEADING_4: STYLE_PROPOSAL_HEADING_4,
+        STYLE_UNNUMBERED_HEADING: STYLE_PROPOSAL_UNNUMBERED_HEADING,
+        STYLE_FIGURE: STYLE_PROPOSAL_FIGURE,
+        STYLE_FIGURE_CAPTION: STYLE_PROPOSAL_FIGURE_CAPTION,
+        STYLE_TABLE_CAPTION: STYLE_PROPOSAL_TABLE_CAPTION,
+        STYLE_BIBLIOGRAPHY: STYLE_PROPOSAL_BIBLIOGRAPHY,
+    }
+    for paragraph in document.paragraphs:
+        target = style_map.get(paragraph.style.name)
+        if target:
+            paragraph.style = document.styles[target]
+    # Citation markers are run-level character styles, so they need their own
+    # pass; leaving them on the thesis style keeps a 论文 name in a 开题 file.
+    _retarget_proposal_citation_runs(document)
+    heading_styles = (
+        STYLE_PROPOSAL_HEADING_1,
+        STYLE_PROPOSAL_HEADING_2,
+        STYLE_PROPOSAL_HEADING_3,
+        STYLE_PROPOSAL_HEADING_4,
+    )
+    for style_name in heading_styles:
+        style = document.styles[style_name]
         style.paragraph_format.alignment = WD_ALIGN_PARAGRAPH.LEFT
         style.paragraph_format.page_break_before = False
         style.paragraph_format.keep_with_next = True
@@ -382,6 +581,7 @@ def _configure_proposal_heading_styles(document: Document, discipline: str) -> N
         indent = style.element.get_or_add_pPr().get_or_add_ind()
         indent.set(qn("w:firstLineChars"), "0" if discipline == "science" else "200")
         indent.set(qn("w:firstLine"), "0" if discipline == "science" else str(round(style.font.size.pt * 40)))
+    _configure_heading_numbering(document, discipline, style_names=heading_styles)
 
 
 def _postprocess_proposal_docx(
@@ -498,6 +698,9 @@ def _postprocess_proposal_docx(
     update_fields.set(qn("w:val"), "true")
     output_docx.parent.mkdir(parents=True, exist_ok=True)
     _localize_bibliography_terms(document, citations, bibliography_items)
+    # Run last: assembling the form table and the citation fields can still add
+    # marker runs after the first pass.
+    _retarget_proposal_citation_runs(document)
     document.save(output_docx)
     if citation_mode == "native":
         _inject_bibliography_sources(output_docx, citations, bibliography_items)

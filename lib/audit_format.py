@@ -593,20 +593,29 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
     by_id = styles_by_id(styles_root)
     by_name = style_map(styles_root)
     heading_num_ids: list[str] = []
-    # The literature review carries its own four heading styles; the proposal
-    # reuses the thesis family.  Auditing only the thesis names left review
-    # headings unchecked.
-    heading_style_names = (
-        "宜宾综述-一级标题",
-        "宜宾综述-二级标题",
-        "宜宾综述-三级标题",
-        "宜宾综述-四级标题",
-    ) if document_type == "literature-review" else (
-        "宜宾论文-一级标题",
-        "宜宾论文-二级标题",
-        "宜宾论文-三级标题",
-        "宜宾论文-四级标题",
-    )
+    # Every document type carries its own four heading styles: the review and
+    # the proposal no longer borrow the thesis ladder.
+    if document_type == "literature-review":
+        heading_style_names = (
+            "宜宾综述-一级标题",
+            "宜宾综述-二级标题",
+            "宜宾综述-三级标题",
+            "宜宾综述-四级标题",
+        )
+    elif document_type == "proposal":
+        heading_style_names = (
+            "宜宾开题-一级标题",
+            "宜宾开题-二级标题",
+            "宜宾开题-三级标题",
+            "宜宾开题-四级标题",
+        )
+    else:
+        heading_style_names = (
+            "宜宾论文-一级标题",
+            "宜宾论文-二级标题",
+            "宜宾论文-三级标题",
+            "宜宾论文-四级标题",
+        )
     for level, style_key in enumerate(heading_style_names):
         style = by_name.get(style_key.casefold())
         audit.true(f"{prefix}.{style_key} style is missing", style is not None)
@@ -843,7 +852,7 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
         )
     elif is_proposal:
         expected_cover_geometry = (
-            ([1480, 6094], "960", "atLeast"),
+            ([1559, 5981], "960", "atLeast"),
             ([1559, 4620], "720", "exact"),
             ([1559, 4620], "720", "exact"),
             ([1559, 4620], "720", "exact"),
@@ -891,13 +900,17 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
         alignment = attr(table.find(f"{W}tblPr/{W}jc"), "val")
         audit.true(
             f"{prefix}.cover.geometry-table[{index}] has invalid alignment",
-            alignment
-            in (
-                {"right"} if is_proposal and index == 1
-                else {"center"} if is_proposal
-                else {None, "left", "start"}
-            ),
+            # Every proposal cover row hangs off one shared tblInd origin, so
+            # all of them are left aligned instead of centred or right aligned.
+            alignment in {None, "left", "start"},
         )
+        if is_proposal:
+            indent = attr(table.find(f"{W}tblPr/{W}tblInd"), "w")
+            audit.equal(
+                f"{prefix}.cover.geometry-table[{index}].indent",
+                indent,
+                "1389",
+            )
 
     # There are nine independently fillable slots on the six official cover
     # rows (college, major, author, student id, grade, two advisers and their
@@ -1510,17 +1523,21 @@ def audit_generated_docx(audit: Audit, docx: Path, logo: Path) -> None:
             f"{prefix}.citation[{citation_index}] cached result is missing",
             bool(result_runs),
         )
+        expected_citation_style = (
+            "宜宾开题-文献上标" if is_proposal else "宜宾论文-文献上标"
+        )
         for run in result_runs:
             audit.equal(
                 f"{prefix}.citation[{citation_index}].result-style",
                 effective_run_style_name(run, by_id),
-                "宜宾论文-文献上标",
+                expected_citation_style,
             )
 
     citation_marker_runs = [
         run
         for run in document.findall(f".//{W}r")
-        if effective_run_style_name(run, by_id) == "宜宾论文-文献上标"
+        if effective_run_style_name(run, by_id)
+        == ("宜宾开题-文献上标" if is_proposal else "宜宾论文-文献上标")
         and "".join(node.text or "" for node in run.findall(W + "t"))
         in {"[", "]", ","}
     ]

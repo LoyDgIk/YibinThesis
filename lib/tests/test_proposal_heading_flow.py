@@ -163,7 +163,10 @@ class ProposalHeadingFlowTests(unittest.TestCase):
 
     def _check_heading_style(self, paragraph, level: int, discipline: str) -> None:
         style = paragraph.style
-        self.assertEqual(style.font.size.pt, (16, 15, 14, 14)[level])
+        # The proposal ladder is 小四 bold at every level with single spacing.
+        self.assertEqual(style.font.size.pt, (12, 12, 12, 12)[level])
+        self.assertTrue(style.font.bold)
+        self.assertEqual(style.paragraph_format.line_spacing, 1.0)
         self.assertEqual(style.paragraph_format.alignment, WD_ALIGN_PARAGRAPH.LEFT)
         self.assertIn(paragraph.paragraph_format.alignment, (None, WD_ALIGN_PARAGRAPH.LEFT))
         self.assertFalse(style.paragraph_format.page_break_before)
@@ -244,8 +247,8 @@ class ProposalHeadingFlowTests(unittest.TestCase):
         self.assertNotIn("国内、国外研究现状应分开概述；概述时语言简练、重点突出。", form.rows[1].cells[1].text)
         self.assertNotIn("规范表述。", form.rows[5].cells[1].text)
         heading_styles = (
-            WORD.STYLE_HEADING_1, WORD.STYLE_HEADING_2,
-            WORD.STYLE_HEADING_3, WORD.STYLE_HEADING_4,
+            WORD.STYLE_PROPOSAL_HEADING_1, WORD.STYLE_PROPOSAL_HEADING_2,
+            WORD.STYLE_PROPOSAL_HEADING_3, WORD.STYLE_PROPOSAL_HEADING_4,
         )
         branch_num_ids = []
         caption_numbers = []
@@ -292,7 +295,7 @@ class ProposalHeadingFlowTests(unittest.TestCase):
                 self.assertEqual(len(cell.tables), 1)
                 captions = [
                     p for p in cell.paragraphs
-                    if p.style.name == WORD.STYLE_TABLE_CAPTION
+                    if p.style.name == WORD.STYLE_PROPOSAL_TABLE_CAPTION
                     and f"{prefix}对照表" in p.text
                 ]
                 self.assertEqual(len(captions), 1)

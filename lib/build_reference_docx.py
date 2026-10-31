@@ -60,6 +60,15 @@ STYLE_PROPOSAL_TITLE = "宜宾开题-标题"
 STYLE_PROPOSAL_SUBTITLE = "宜宾开题-副标题"
 STYLE_PROPOSAL_LABEL = "宜宾开题-栏目"
 STYLE_PROPOSAL_BODY = "宜宾开题-正文"
+STYLE_PROPOSAL_HEADING_1 = "宜宾开题-一级标题"
+STYLE_PROPOSAL_HEADING_2 = "宜宾开题-二级标题"
+STYLE_PROPOSAL_HEADING_3 = "宜宾开题-三级标题"
+STYLE_PROPOSAL_HEADING_4 = "宜宾开题-四级标题"
+STYLE_PROPOSAL_FIGURE = "宜宾开题-插图"
+STYLE_PROPOSAL_FIGURE_CAPTION = "宜宾开题-图题"
+STYLE_PROPOSAL_TABLE_CAPTION = "宜宾开题-表题"
+STYLE_PROPOSAL_BIBLIOGRAPHY = "宜宾开题-参考文献"
+STYLE_PROPOSAL_CITATION = "宜宾开题-文献上标"
 STYLE_PROPOSAL_PROMPT = "宜宾开题-提示"
 STYLE_PROPOSAL_UNNUMBERED_HEADING = "宜宾开题-无编号标题"
 STYLE_PROPOSAL_SIGNATURE = "宜宾开题-签名"
@@ -847,10 +856,21 @@ def build_reference_docx(output: Path) -> Path:
         (STYLE_PROPOSAL_TITLE, KAITI, 18, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 6, True, False, 50, None),
         (STYLE_PROPOSAL_SUBTITLE, SIMSUN, 12, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 6, True, False, 51, None),
         (STYLE_PROPOSAL_LABEL, SIMHEI, 12, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 0, False, False, 52, None),
-        (STYLE_PROPOSAL_BODY, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, True, 1.5, 0, 0, False, False, 53, None),
-        (STYLE_PROPOSAL_PROMPT, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.LEFT, False, 1.5, 0, 0, True, False, 54, None),
-        (STYLE_PROPOSAL_UNNUMBERED_HEADING, KAITI, 15, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.5, 9, 6, True, False, 55, None),
-        (STYLE_PROPOSAL_SIGNATURE, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.RIGHT, False, 1.5, 0, 0, True, False, 56, None),
+        (STYLE_PROPOSAL_BODY, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.JUSTIFY, True, 1.0, 0, 0, False, False, 53, None),
+        # The proposal outline keeps the thesis font ladder but drops to 小四
+        # bold at every level and uses single spacing: a form field is a flat
+        # block, and the numbering carries the hierarchy instead of the size.
+        (STYLE_PROPOSAL_HEADING_1, SIMHEI, 12, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.0, 0, 0, True, True, 81, 0),
+        (STYLE_PROPOSAL_HEADING_2, KAITI, 12, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.0, 0, 0, True, False, 82, 1),
+        (STYLE_PROPOSAL_HEADING_3, SIMSUN, 12, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.0, 0, 0, True, False, 83, 2),
+        (STYLE_PROPOSAL_HEADING_4, SIMSUN, 12, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.0, 0, 0, True, False, 84, 3),
+        (STYLE_PROPOSAL_FIGURE, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 0, True, False, 85, None),
+        (STYLE_PROPOSAL_FIGURE_CAPTION, SIMSUN, 10.5, False, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 3, 3, False, False, 86, None),
+        (STYLE_PROPOSAL_TABLE_CAPTION, SIMSUN, 10.5, False, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 3, 3, True, False, 87, None),
+        (STYLE_PROPOSAL_BIBLIOGRAPHY, SIMSUN, 10.5, False, WD_ALIGN_PARAGRAPH.JUSTIFY, False, 1.0, 0, 0, False, False, 88, None),
+        (STYLE_PROPOSAL_PROMPT, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.LEFT, False, 1.0, 0, 0, True, False, 54, None),
+        (STYLE_PROPOSAL_UNNUMBERED_HEADING, KAITI, 15, True, WD_ALIGN_PARAGRAPH.LEFT, True, 1.0, 9, 6, True, False, 55, None),
+        (STYLE_PROPOSAL_SIGNATURE, SIMSUN, 12, False, WD_ALIGN_PARAGRAPH.RIGHT, False, 1.0, 0, 0, True, False, 56, None),
         (STYLE_REVIEW_DOCUMENT_TITLE, SIMHEI, 28, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 24, 64, True, False, 57, None),
         (STYLE_REVIEW_THESIS_TITLE, SIMHEI, 16, True, WD_ALIGN_PARAGRAPH.CENTER, False, 1.0, 0, 3, True, False, 58, None),
         (STYLE_REVIEW_INFO_LABEL, SIMHEI, 18, True, WD_ALIGN_PARAGRAPH.LEFT, False, 1.0, 0, 0, True, False, 59, None),
@@ -906,6 +926,14 @@ def build_reference_docx(output: Path) -> Path:
         STYLE_PROPOSAL_SUBTITLE,
         STYLE_PROPOSAL_LABEL,
         STYLE_PROPOSAL_BODY,
+        STYLE_PROPOSAL_HEADING_1,
+        STYLE_PROPOSAL_HEADING_2,
+        STYLE_PROPOSAL_HEADING_3,
+        STYLE_PROPOSAL_HEADING_4,
+        STYLE_PROPOSAL_FIGURE,
+        STYLE_PROPOSAL_FIGURE_CAPTION,
+        STYLE_PROPOSAL_TABLE_CAPTION,
+        STYLE_PROPOSAL_BIBLIOGRAPHY,
         STYLE_PROPOSAL_PROMPT,
         STYLE_PROPOSAL_UNNUMBERED_HEADING,
         STYLE_PROPOSAL_SIGNATURE,
@@ -975,9 +1003,12 @@ def build_reference_docx(output: Path) -> Path:
         ),
     )
 
-    bibliography_visible = document.styles[STYLE_BIBLIOGRAPHY]
-    bibliography_visible.paragraph_format.left_indent = Cm(0.74)
-    bibliography_visible.paragraph_format.first_line_indent = Cm(-0.74)
+    # Both bibliography styles hang the wrapped lines under the entry body so a
+    # long reference stays readable without a two-character first-line indent.
+    for bibliography_name in (STYLE_BIBLIOGRAPHY, STYLE_PROPOSAL_BIBLIOGRAPHY):
+        bibliography_visible = document.styles[bibliography_name]
+        bibliography_visible.paragraph_format.left_indent = Cm(0.74)
+        bibliography_visible.paragraph_format.first_line_indent = Cm(-0.74)
     table_continuation_visible = document.styles[STYLE_TABLE_CONTINUATION]
     table_continuation_visible.base_style = document.styles["Caption"]
     _set_style_bottom_border(document.styles[STYLE_REVIEW_INFO_VALUE])
@@ -992,6 +1023,19 @@ def build_reference_docx(output: Path) -> Path:
         quick_priority=31,
     )
     citation_style.base_style = document.styles["Default Paragraph Font"]
+    # The proposal carries its own superscript marker so no thesis character
+    # style leaks into the opening-report output.  It stays 小四 so the marker
+    # keeps the body size once Word raises it.
+    proposal_citation_style = _configure_character_style(
+        document,
+        STYLE_PROPOSAL_CITATION,
+        east_asia=SIMSUN,
+        latin=TIMES,
+        size=12,
+        superscript=True,
+        quick_priority=89,
+    )
+    proposal_citation_style.base_style = document.styles["Default Paragraph Font"]
     _configure_three_line_table_style(document)
     _configure_layout_table_style(
         document,
@@ -1054,6 +1098,13 @@ def build_reference_docx(output: Path) -> Path:
     document.styles[STYLE_TABLE_CAPTION].next_paragraph_style = document.styles[STYLE_TABLE_TEXT]
     document.styles[STYLE_TABLE_CONTINUATION].next_paragraph_style = document.styles[STYLE_TABLE_HEADER]
     document.styles[STYLE_PROPOSAL_BODY].next_paragraph_style = document.styles[STYLE_PROPOSAL_BODY]
+    for style_name in (
+        STYLE_PROPOSAL_HEADING_1,
+        STYLE_PROPOSAL_HEADING_2,
+        STYLE_PROPOSAL_HEADING_3,
+        STYLE_PROPOSAL_HEADING_4,
+    ):
+        document.styles[style_name].next_paragraph_style = document.styles[STYLE_PROPOSAL_BODY]
     document.styles[STYLE_PROPOSAL_PROMPT].next_paragraph_style = document.styles[STYLE_PROPOSAL_BODY]
     document.styles[STYLE_PROPOSAL_UNNUMBERED_HEADING].next_paragraph_style = document.styles[STYLE_PROPOSAL_BODY]
     for style_name in (
